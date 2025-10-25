@@ -1,0 +1,34 @@
+[Unit]
+Description=Telegram Premium Store Bot
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/telegram-store-bot
+ExecStart=/usr/local/bin/telegram-store-bot
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=telegram-store-bot
+
+# Environment
+Environment=DATABASE_PATH=/opt/telegram-store-bot/store.db
+EnvironmentFile=/opt/telegram-store-bot/.env
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/telegram-store-bot
+
+# Resource limits
+LimitNOFILE=1024
+LimitNPROC=512
+
+[Install]
+WantedBy=multi-user.target

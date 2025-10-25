@@ -8,35 +8,33 @@
 *.sqlite
 *.sqlite3
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
+# Go
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
 *.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+*.dylib
+bin/
+release/
 
-# Virtual environments
-venv/
-env/
-ENV/
-env.bak/
-venv.bak/
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+coverage.html
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+
+# Build artifacts
+tmp/
+build/
+dist/
 
 # IDE
 .vscode/
@@ -57,6 +55,7 @@ Thumbs.db
 # Logs
 *.log
 logs/
+build-errors.log
 
 # Docker
 .dockerignore
@@ -64,6 +63,7 @@ logs/
 # Backup files
 *.bak
 *.backup
+backups/
 
 # Temporary files
 *.tmp
@@ -75,6 +75,22 @@ admin_ids.txt
 payments/
 downloads/
 
-# Data directory (if using external storage)
+# Data directory
 data/
 uploads/
+
+# Air (live reload)
+tmp/
+.air.toml.local
+
+# Testing
+testdata/
+test-results/
+
+# Documentation build
+docs/_build/
+site/
+
+# Runtime
+*.pid
+*.lock
