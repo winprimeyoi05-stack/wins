@@ -233,7 +233,7 @@ func (q *RealQRISService) GenerateDynamicQRIS(orderID string, amount int) (*mode
 		CountryCode:  q.merchantInfo.CountryCode,
 		CurrencyCode: q.merchantInfo.Currency,
 		QRString:     dynamicPayload,
-		ExpiryTime:   time.Now().Add(15 * time.Minute), // 15 minutes expiry
+		ExpiryTime:   time.Now().Add(5 * time.Minute), // 5 minutes expiry
 	}
 
 	logrus.Info("✅ Dynamic QRIS generated successfully")
@@ -410,7 +410,7 @@ func (q *RealQRISService) GetPaymentInstructions(orderID string, amount int) str
 7️⃣ Pembayaran akan otomatis terverifikasi
 
 ⚠️ *PENTING:*
-• QR Code berlaku selama 15 menit
+• QR Code berlaku selama 5 menit
 • Jangan ubah nominal pembayaran
 • Order ID: *%s*
 • Simpan screenshot untuk referensi

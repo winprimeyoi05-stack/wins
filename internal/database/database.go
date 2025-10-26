@@ -40,6 +40,11 @@ func Initialize(dbPath string) (*DB, error) {
 		logrus.Warn("Failed to insert sample data: ", err)
 	}
 
+	// Insert default categories
+	if err := dbWrapper.insertDefaultCategories(); err != nil {
+		logrus.Warn("Failed to insert default categories: ", err)
+	}
+
 	logrus.Info("✅ Database initialized successfully")
 	return dbWrapper, nil
 }
@@ -111,6 +116,37 @@ func (db *DB) migrate() error {
 			FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE
 		)`,
 
+		// Categories table
+		`CREATE TABLE IF NOT EXISTS categories (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT UNIQUE NOT NULL,
+			display_name TEXT NOT NULL,
+			icon TEXT DEFAULT '📦',
+			is_active BOOLEAN DEFAULT TRUE,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		// User interactions table for broadcast
+		`CREATE TABLE IF NOT EXISTS user_interactions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL,
+			interaction_type TEXT NOT NULL,
+			interaction_data TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+		)`,
+
+		// Broadcast messages table
+		`CREATE TABLE IF NOT EXISTS broadcasts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			message TEXT NOT NULL,
+			target_type TEXT DEFAULT 'all',
+			sent_count INTEGER DEFAULT 0,
+			created_by INTEGER NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			sent_at DATETIME
+		)`,
+
 		// Indexes for better performance
 		`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`,
 		`CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)`,
@@ -119,6 +155,10 @@ func (db *DB) migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(payment_status)`,
 		`CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_categories_active ON categories(is_active)`,
+		`CREATE INDEX IF NOT EXISTS idx_user_interactions_user ON user_interactions(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_user_interactions_type ON user_interactions(interaction_type)`,
+		`CREATE INDEX IF NOT EXISTS idx_broadcasts_created ON broadcasts(created_at)`,
 	}
 
 	for _, migration := range migrations {
@@ -231,6 +271,34 @@ func (db *DB) insertSampleData() error {
 	}
 
 	logrus.Info("✅ Sample products inserted successfully")
+	return nil
+}
+
+// insertDefaultCategories inserts default categories if not exist
+func (db *DB) insertDefaultCategories() error {
+	// Check if categories already exist
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM categories").Scan(&count)
+	if err != nil {
+		return err
+	}
+
+	if count > 0 {
+		return nil // Categories already exist
+	}
+
+	defaultCategories := models.GetDefaultCategories()
+	for _, category := range defaultCategories {
+		_, err := db.Exec(`
+			INSERT INTO categories (name, display_name, icon)
+			VALUES (?, ?, ?)
+		`, category.Name, category.DisplayName, category.Icon)
+		if err != nil {
+			return fmt.Errorf("failed to insert category %s: %w", category.Name, err)
+		}
+	}
+
+	logrus.Info("✅ Default categories inserted successfully")
 	return nil
 }
 
@@ -551,4 +619,317 @@ func (db *DB) GetUserOrders(userID int64, limit, offset int) ([]models.Order, er
 	}
 
 	return orders, rows.Err()
+}
+
+// Stock Management Methods
+
+// UpdateProductStock updates product stock
+func (db *DB) UpdateProductStock(productID, newStock int) error {
+	_, err := db.Exec(`
+		UPDATE products SET stock = ?, updated_at = CURRENT_TIMESTAMP 
+		WHERE id = ?
+	`, newStock, productID)
+	return err
+}
+
+// DecrementProductStock decrements product stock (for purchases)
+func (db *DB) DecrementProductStock(productID, quantity int) error {
+	_, err := db.Exec(`
+		UPDATE products 
+		SET stock = stock - ?, updated_at = CURRENT_TIMESTAMP 
+		WHERE id = ? AND stock >= ?
+	`, quantity, productID, quantity)
+	return err
+}
+
+// GetLowStockProducts returns products with stock below threshold
+func (db *DB) GetLowStockProducts(threshold int) ([]models.Product, error) {
+	rows, err := db.Query(`
+		SELECT id, name, description, price, category, image_url, download_url,
+			   is_active, stock, created_at, updated_at
+		FROM products 
+		WHERE is_active = TRUE AND stock <= ?
+		ORDER BY stock ASC, name
+	`, threshold)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var products []models.Product
+	for rows.Next() {
+		var product models.Product
+		err := rows.Scan(&product.ID, &product.Name, &product.Description,
+			&product.Price, &product.Category, &product.ImageURL,
+			&product.DownloadURL, &product.IsActive, &product.Stock,
+			&product.CreatedAt, &product.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+		products = append(products, product)
+	}
+
+	return products, rows.Err()
+}
+
+// Category Management Methods
+
+// CreateCategory creates a new category
+func (db *DB) CreateCategory(name, displayName, icon string) error {
+	_, err := db.Exec(`
+		INSERT INTO categories (name, display_name, icon)
+		VALUES (?, ?, ?)
+	`, name, displayName, icon)
+	return err
+}
+
+// UpdateCategory updates category information
+func (db *DB) UpdateCategory(id int, displayName, icon string) error {
+	_, err := db.Exec(`
+		UPDATE categories 
+		SET display_name = ?, icon = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, displayName, icon, id)
+	return err
+}
+
+// DeleteCategory soft deletes a category
+func (db *DB) DeleteCategory(id int) error {
+	_, err := db.Exec(`
+		UPDATE categories SET is_active = FALSE WHERE id = ?
+	`, id)
+	return err
+}
+
+// GetCategoriesFromDB returns categories from database
+func (db *DB) GetCategoriesFromDB() ([]models.ProductCategory, error) {
+	rows, err := db.Query(`
+		SELECT c.id, c.name, c.display_name, c.icon, COUNT(p.id) as count
+		FROM categories c
+		LEFT JOIN products p ON c.name = p.category AND p.is_active = TRUE
+		WHERE c.is_active = TRUE
+		GROUP BY c.id, c.name, c.display_name, c.icon
+		ORDER BY c.display_name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var categories []models.ProductCategory
+	for rows.Next() {
+		var category models.ProductCategory
+		var id int
+		err := rows.Scan(&id, &category.Name, &category.DisplayName, 
+			&category.Icon, &category.Count)
+		if err != nil {
+			return nil, err
+		}
+		categories = append(categories, category)
+	}
+
+	return categories, rows.Err()
+}
+
+// Product Management Methods
+
+// DeleteProduct soft deletes a product
+func (db *DB) DeleteProduct(id int) error {
+	_, err := db.Exec(`
+		UPDATE products SET is_active = FALSE WHERE id = ?
+	`, id)
+	return err
+}
+
+// UpdateProduct updates product information
+func (db *DB) UpdateProduct(product *models.Product) error {
+	_, err := db.Exec(`
+		UPDATE products 
+		SET name = ?, description = ?, price = ?, category = ?, 
+			image_url = ?, download_url = ?, stock = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, product.Name, product.Description, product.Price, product.Category,
+		product.ImageURL, product.DownloadURL, product.Stock, product.ID)
+	return err
+}
+
+// User Interaction Tracking
+
+// LogUserInteraction logs user interaction for broadcast targeting
+func (db *DB) LogUserInteraction(userID int64, interactionType, data string) error {
+	_, err := db.Exec(`
+		INSERT INTO user_interactions (user_id, interaction_type, interaction_data)
+		VALUES (?, ?, ?)
+	`, userID, interactionType, data)
+	return err
+}
+
+// GetActiveUsers returns list of active users for broadcast
+func (db *DB) GetActiveUsers(days int) ([]int64, error) {
+	rows, err := db.Query(`
+		SELECT DISTINCT user_id 
+		FROM user_interactions 
+		WHERE created_at >= datetime('now', '-' || ? || ' days')
+		ORDER BY user_id
+	`, days)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var userIDs []int64
+	for rows.Next() {
+		var userID int64
+		if err := rows.Scan(&userID); err != nil {
+			return nil, err
+		}
+		userIDs = append(userIDs, userID)
+	}
+
+	return userIDs, rows.Err()
+}
+
+// GetAllUsers returns all users who ever interacted with bot
+func (db *DB) GetAllUsers() ([]int64, error) {
+	rows, err := db.Query(`
+		SELECT DISTINCT user_id FROM users ORDER BY user_id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var userIDs []int64
+	for rows.Next() {
+		var userID int64
+		if err := rows.Scan(&userID); err != nil {
+			return nil, err
+		}
+		userIDs = append(userIDs, userID)
+	}
+
+	return userIDs, rows.Err()
+}
+
+// Broadcast Management
+
+// CreateBroadcast creates a new broadcast message
+func (db *DB) CreateBroadcast(message, targetType string, createdBy int64) (int64, error) {
+	result, err := db.Exec(`
+		INSERT INTO broadcasts (message, target_type, created_by)
+		VALUES (?, ?, ?)
+	`, message, targetType, createdBy)
+	if err != nil {
+		return 0, err
+	}
+
+	return result.LastInsertId()
+}
+
+// UpdateBroadcastSent updates broadcast sent status
+func (db *DB) UpdateBroadcastSent(id int64, sentCount int) error {
+	_, err := db.Exec(`
+		UPDATE broadcasts 
+		SET sent_count = ?, sent_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, sentCount, id)
+	return err
+}
+
+// Order Management with Stock
+
+// CreateOrderWithStock creates order and decrements stock
+func (db *DB) CreateOrderWithStock(order *models.Order) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Check stock availability for all items
+	for _, item := range order.Items {
+		var currentStock int
+		err = tx.QueryRow(`
+			SELECT stock FROM products WHERE id = ? AND is_active = TRUE
+		`, item.ProductID).Scan(&currentStock)
+		if err != nil {
+			return fmt.Errorf("product not found or inactive: %d", item.ProductID)
+		}
+
+		if currentStock < item.Quantity {
+			return fmt.Errorf("insufficient stock for product ID %d: available %d, requested %d", 
+				item.ProductID, currentStock, item.Quantity)
+		}
+	}
+
+	// Insert order
+	_, err = tx.Exec(`
+		INSERT INTO orders (id, user_id, total_amount, payment_method, payment_status, qris_code, qris_expiry)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, order.ID, order.UserID, order.TotalAmount, order.PaymentMethod,
+		order.PaymentStatus, order.QRISCode, order.QRISExpiry)
+	if err != nil {
+		return err
+	}
+
+	// Insert order items and decrement stock
+	for _, item := range order.Items {
+		// Insert order item
+		_, err = tx.Exec(`
+			INSERT INTO order_items (order_id, product_id, quantity, price)
+			VALUES (?, ?, ?, ?)
+		`, order.ID, item.ProductID, item.Quantity, item.Price)
+		if err != nil {
+			return err
+		}
+
+		// Decrement stock
+		_, err = tx.Exec(`
+			UPDATE products 
+			SET stock = stock - ?, updated_at = CURRENT_TIMESTAMP
+			WHERE id = ?
+		`, item.Quantity, item.ProductID)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// RestoreStockFromOrder restores stock when order is cancelled
+func (db *DB) RestoreStockFromOrder(orderID string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Get order items
+	rows, err := tx.Query(`
+		SELECT product_id, quantity FROM order_items WHERE order_id = ?
+	`, orderID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	// Restore stock for each item
+	for rows.Next() {
+		var productID, quantity int
+		if err := rows.Scan(&productID, &quantity); err != nil {
+			return err
+		}
+
+		_, err = tx.Exec(`
+			UPDATE products 
+			SET stock = stock + ?, updated_at = CURRENT_TIMESTAMP
+			WHERE id = ?
+		`, quantity, productID)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }

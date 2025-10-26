@@ -11,6 +11,7 @@ import (
 	"telegram-premium-store/internal/models"
 	"telegram-premium-store/internal/payment"
 	"telegram-premium-store/internal/qris"
+	"telegram-premium-store/internal/scheduler"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/sirupsen/logrus"
@@ -23,6 +24,7 @@ type Bot struct {
 	db               *database.DB
 	paymentService   *payment.QRISService
 	realQRISService  *qris.RealQRISService
+	scheduler        *scheduler.Scheduler
 	messages         *config.Messages
 	updates          tgbotapi.UpdatesChannel
 }
@@ -36,19 +38,27 @@ func New(cfg *config.Config, db *database.DB, paymentService *payment.QRISServic
 
 	api.Debug = cfg.LogLevel == "DEBUG"
 
-	return &Bot{
+	bot := &Bot{
 		api:              api,
 		config:           cfg,
 		db:               db,
 		paymentService:   paymentService,
 		realQRISService:  qris.NewRealQRISService(cfg),
 		messages:         config.GetMessages(),
-	}, nil
+	}
+
+	// Initialize scheduler
+	bot.scheduler = scheduler.NewScheduler(db, api, cfg)
+
+	return bot, nil
 }
 
 // Start starts the bot
 func (b *Bot) Start() error {
 	logrus.Info("Starting bot polling...")
+
+	// Start background scheduler
+	b.scheduler.Start()
 
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
@@ -65,6 +75,13 @@ func (b *Bot) Start() error {
 
 // Stop stops the bot
 func (b *Bot) Stop() {
+	logrus.Info("Stopping bot...")
+	
+	// Stop scheduler
+	if b.scheduler != nil {
+		b.scheduler.Stop()
+	}
+	
 	b.api.StopReceivingUpdates()
 }
 
@@ -87,12 +104,20 @@ func (b *Bot) handleUpdate(update tgbotapi.Update) {
 		// Register user if not exists
 		b.registerUser(update.Message.From)
 
+		// Log user interaction for broadcast targeting
+		b.db.LogUserInteraction(update.Message.From.ID, "message", "")
+
 		if update.Message.IsCommand() {
 			b.handleCommand(update.Message)
 		} else {
 			// Check if it's a QRIS image upload
 			if update.Message.Photo != nil && b.isUserInState(update.Message.From.ID, "waiting_qris_upload") {
 				b.handleQRISImageUpload(update.Message)
+			} else if strings.HasPrefix(b.getUserState(update.Message.From.ID), "waiting_broadcast_") {
+				// Handle broadcast message input
+				targetType := strings.TrimPrefix(b.getUserState(update.Message.From.ID), "waiting_broadcast_")
+				b.clearUserState(update.Message.From.ID)
+				b.processBroadcastMessage(update.Message, targetType)
 			} else {
 				b.handleMessage(update.Message)
 			}

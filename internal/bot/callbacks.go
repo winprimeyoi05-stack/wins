@@ -55,14 +55,26 @@ func (b *Bot) handleCallbackQuery(callback *tgbotapi.CallbackQuery) {
 		}
 	case "buy":
 		if len(parts) > 1 {
-			if productID, err := strconv.Atoi(parts[1]); err == nil {
-				b.handleAddToCart(callback, productID, 1)
+			productID, _ := strconv.Atoi(parts[1])
+			quantity := 1
+			if len(parts) > 2 {
+				quantity, _ = strconv.Atoi(parts[2])
 			}
+			b.handleAddToCart(callback, productID, quantity)
 		}
 	case "addcart":
 		if len(parts) > 1 {
+			productID, _ := strconv.Atoi(parts[1])
+			quantity := 1
+			if len(parts) > 2 {
+				quantity, _ = strconv.Atoi(parts[2])
+			}
+			b.handleAddToCart(callback, productID, quantity)
+		}
+	case "notify":
+		if len(parts) > 1 {
 			if productID, err := strconv.Atoi(parts[1]); err == nil {
-				b.handleAddToCart(callback, productID, 1)
+				b.handleStockNotification(callback, productID)
 			}
 		}
 	case "cart":
@@ -77,6 +89,14 @@ func (b *Bot) handleCallbackQuery(callback *tgbotapi.CallbackQuery) {
 		}
 	case "contact":
 		b.handleContactCallback(callback)
+	case "cancel":
+		if len(parts) > 1 {
+			b.handleCancelOrder(callback, parts[1])
+		}
+	case "confirm_cancel":
+		if len(parts) > 1 {
+			b.handleConfirmCancel(callback, parts[1])
+		}
 	case "admin":
 		if len(parts) > 1 {
 			b.handleAdminCallback(callback, parts[1])
@@ -457,6 +477,28 @@ func (b *Bot) handleCheckout(callback *tgbotapi.CallbackQuery) {
 		return
 	}
 
+	// Validate stock for all items before checkout
+	for _, item := range cartItems {
+		product, err := b.db.GetProduct(item.ProductID)
+		if err != nil || product == nil {
+			b.api.Request(tgbotapi.NewCallback(callback.ID, "❌ Produk tidak ditemukan"))
+			return
+		}
+
+		if product.Stock < item.Quantity {
+			b.api.Request(tgbotapi.NewCallback(callback.ID, 
+				fmt.Sprintf("❌ Stok %s tidak mencukupi! Tersedia: %d, diminta: %d", 
+					product.Name, product.Stock, item.Quantity)))
+			return
+		}
+
+		if product.Stock == 0 {
+			b.api.Request(tgbotapi.NewCallback(callback.ID, 
+				fmt.Sprintf("❌ %s sedang tidak tersedia (stok habis)", product.Name)))
+			return
+		}
+	}
+
 	// Calculate total
 	totalAmount := 0
 	var orderItems []models.OrderItem
@@ -494,10 +536,14 @@ func (b *Bot) handleCheckout(callback *tgbotapi.CallbackQuery) {
 		Items:         orderItems,
 	}
 
-	err = b.db.CreateOrder(order)
+	err = b.db.CreateOrderWithStock(order)
 	if err != nil {
 		logrus.Errorf("Failed to create order %s: %v", orderID, err)
-		b.api.Request(tgbotapi.NewCallback(callback.ID, "❌ Gagal membuat pesanan"))
+		if strings.Contains(err.Error(), "insufficient stock") {
+			b.api.Request(tgbotapi.NewCallback(callback.ID, "❌ Stok tidak mencukupi"))
+		} else {
+			b.api.Request(tgbotapi.NewCallback(callback.ID, "❌ Gagal membuat pesanan"))
+		}
 		return
 	}
 
@@ -541,6 +587,9 @@ func (b *Bot) handleCheckout(callback *tgbotapi.CallbackQuery) {
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("📄 Detail Pesanan", fmt.Sprintf("order:%s", orderID)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("❌ Batalkan Pesanan", fmt.Sprintf("cancel:%s", orderID)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("📞 Hubungi Admin", "contact"),
@@ -640,15 +689,42 @@ func (b *Bot) handleAdminCallback(callback *tgbotapi.CallbackQuery, action strin
 		return
 	}
 
-	switch action {
+	parts := strings.Split(action, ":")
+	mainAction := parts[0]
+
+	switch mainAction {
+	case "main":
+		b.handleAdminMain(callback)
 	case "stats":
 		b.handleAdminStats(callback)
 	case "users":
 		b.handleAdminUsers(callback)
 	case "products":
-		b.handleAdminProducts(callback)
+		b.handleProductManagement(callback)
 	case "orders":
 		b.handleAdminOrders(callback)
+	case "stock":
+		b.handleStockManagement(callback)
+	case "lowstock":
+		b.handleLowStock(callback)
+	case "categories":
+		b.handleCategoryManagement(callback)
+	case "broadcast":
+		if len(parts) > 1 {
+			if parts[1] == "all" || parts[1] == "active" {
+				b.handleSendBroadcast(callback, parts[1])
+			} else {
+				b.handleBroadcastManagement(callback)
+			}
+		} else {
+			b.handleBroadcastManagement(callback)
+		}
+	case "confirm_broadcast":
+		if len(parts) > 1 {
+			if broadcastID, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
+				b.executeBroadcast(callback, broadcastID)
+			}
+		}
 	default:
 		b.api.Request(tgbotapi.NewCallback(callback.ID, "❌ Aksi tidak dikenal"))
 	}
@@ -697,6 +773,35 @@ func (b *Bot) handleAdminProducts(callback *tgbotapi.CallbackQuery) {
 	)
 
 	edit := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, text)
+	edit.ParseMode = tgbotapi.ModeMarkdown
+	edit.ReplyMarkup = &keyboard
+
+	b.api.Send(edit)
+}
+
+func (b *Bot) handleAdminMain(callback *tgbotapi.CallbackQuery) {
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📊 Statistik", "admin:stats"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📦 Kelola Produk", "admin:products"),
+			tgbotapi.NewInlineKeyboardButtonData("🏷️ Kelola Kategori", "admin:categories"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📊 Kelola Stok", "admin:stock"),
+			tgbotapi.NewInlineKeyboardButtonData("💰 Kelola Pesanan", "admin:orders"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📢 Broadcast", "admin:broadcast"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔧 Setup QRIS", "qris:setup"),
+		),
+	)
+
+	edit := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, 
+		"👨‍💼 *PANEL ADMIN*\n\nPilih menu admin:")
 	edit.ParseMode = tgbotapi.ModeMarkdown
 	edit.ReplyMarkup = &keyboard
 
