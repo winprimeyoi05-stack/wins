@@ -7,8 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-
-	"telegram-premium-store/internal/models"
+	"time"
 )
 
 // PaymentVerifier handles payment verification and anti-manipulation
