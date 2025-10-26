@@ -198,6 +198,88 @@ func formatNumber(n int) string {
 	return string(result)
 }
 
+// ProductAccount represents email|password account for products
+type ProductAccount struct {
+	ID           int       `json:"id" db:"id"`
+	ProductID    int       `json:"product_id" db:"product_id"`
+	Email        string    `json:"email" db:"email"`
+	Password     string    `json:"password" db:"password"`
+	IsSold       bool      `json:"is_sold" db:"is_sold"`
+	SoldToUserID *int64    `json:"sold_to_user_id" db:"sold_to_user_id"`
+	SoldOrderID  *string   `json:"sold_order_id" db:"sold_order_id"`
+	SoldAt       *time.Time `json:"sold_at" db:"sold_at"`
+	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+}
+
+// SoldAccount represents sold account tracking
+type SoldAccount struct {
+	ID              int       `json:"id" db:"id"`
+	OrderID         string    `json:"order_id" db:"order_id"`
+	ProductID       int       `json:"product_id" db:"product_id"`
+	AccountID       int       `json:"account_id" db:"account_id"`
+	UserID          int64     `json:"user_id" db:"user_id"`
+	Email           string    `json:"email" db:"email"`
+	Password        string    `json:"password" db:"password"`
+	SoldPrice       int       `json:"sold_price" db:"sold_price"`
+	SoldAt          time.Time `json:"sold_at" db:"sold_at"`
+	
+	// Joined fields
+	ProductName     string  `json:"product_name,omitempty" db:"product_name"`
+	BuyerFirstName  *string `json:"buyer_first_name,omitempty" db:"first_name"`
+	BuyerLastName   *string `json:"buyer_last_name,omitempty" db:"last_name"`
+	BuyerUsername   *string `json:"buyer_username,omitempty" db:"username"`
+}
+
+// PaymentVerification represents payment verification for anti-manipulation
+type PaymentVerification struct {
+	ID               int       `json:"id" db:"id"`
+	OrderID          string    `json:"order_id" db:"order_id"`
+	ExpectedAmount   int       `json:"expected_amount" db:"expected_amount"`
+	QRISPayload      string    `json:"qris_payload" db:"qris_payload"`
+	VerificationHash string    `json:"verification_hash" db:"verification_hash"`
+	CreatedAt        time.Time `json:"created_at" db:"created_at"`
+	VerifiedAt       *time.Time `json:"verified_at" db:"verified_at"`
+}
+
+// StockSummary represents stock summary for a product
+type StockSummary struct {
+	ProductID      int `json:"product_id"`
+	AvailableStock int `json:"available_stock"`
+	SoldStock      int `json:"sold_stock"`
+	TotalStock     int `json:"total_stock"`
+}
+
+// AccountCredentials represents formatted account credentials
+type AccountCredentials struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	Format   string `json:"format"` // "email | password"
+}
+
+// FormatAccountCredentials formats account as "email | password"
+func (a *ProductAccount) FormatAccountCredentials() string {
+	return fmt.Sprintf("%s | %s", a.Email, a.Password)
+}
+
+// GetBuyerName returns formatted buyer name
+func (s *SoldAccount) GetBuyerName() string {
+	var name string
+	if s.BuyerFirstName != nil {
+		name = *s.BuyerFirstName
+	}
+	if s.BuyerLastName != nil {
+		if name != "" {
+			name += " " + *s.BuyerLastName
+		} else {
+			name = *s.BuyerLastName
+		}
+	}
+	if name == "" {
+		name = "Unknown"
+	}
+	return name
+}
+
 // JSONMap is a helper type for storing JSON data in database
 type JSONMap map[string]interface{}
 

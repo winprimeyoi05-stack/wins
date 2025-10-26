@@ -477,7 +477,7 @@ func (b *Bot) handleCheckout(callback *tgbotapi.CallbackQuery) {
 		return
 	}
 
-	// Validate stock for all items before checkout
+	// Validate account availability for all items before checkout
 	for _, item := range cartItems {
 		product, err := b.db.GetProduct(item.ProductID)
 		if err != nil || product == nil {
@@ -485,14 +485,22 @@ func (b *Bot) handleCheckout(callback *tgbotapi.CallbackQuery) {
 			return
 		}
 
-		if product.Stock < item.Quantity {
-			b.api.Request(tgbotapi.NewCallback(callback.ID, 
-				fmt.Sprintf("❌ Stok %s tidak mencukupi! Tersedia: %d, diminta: %d", 
-					product.Name, product.Stock, item.Quantity)))
+		// Check available accounts instead of stock
+		availableAccounts, err := b.db.GetAvailableAccountCount(item.ProductID)
+		if err != nil {
+			logrus.Errorf("Failed to get available accounts for product %d: %v", item.ProductID, err)
+			b.api.Request(tgbotapi.NewCallback(callback.ID, "❌ Gagal validasi stok"))
 			return
 		}
 
-		if product.Stock == 0 {
+		if availableAccounts < item.Quantity {
+			b.api.Request(tgbotapi.NewCallback(callback.ID, 
+				fmt.Sprintf("❌ Stok %s tidak mencukupi! Tersedia: %d akun, diminta: %d", 
+					product.Name, availableAccounts, item.Quantity)))
+			return
+		}
+
+		if availableAccounts == 0 {
 			b.api.Request(tgbotapi.NewCallback(callback.ID, 
 				fmt.Sprintf("❌ %s sedang tidak tersedia (stok habis)", product.Name)))
 			return
@@ -536,15 +544,25 @@ func (b *Bot) handleCheckout(callback *tgbotapi.CallbackQuery) {
 		Items:         orderItems,
 	}
 
-	err = b.db.CreateOrderWithStock(order)
+	// Create order with account assignment
+	assignedAccounts, err := b.db.CreateOrderWithAccounts(order)
 	if err != nil {
 		logrus.Errorf("Failed to create order %s: %v", orderID, err)
-		if strings.Contains(err.Error(), "insufficient stock") {
-			b.api.Request(tgbotapi.NewCallback(callback.ID, "❌ Stok tidak mencukupi"))
+		if strings.Contains(err.Error(), "insufficient accounts") {
+			b.api.Request(tgbotapi.NewCallback(callback.ID, "❌ Stok akun tidak mencukupi"))
 		} else {
 			b.api.Request(tgbotapi.NewCallback(callback.ID, "❌ Gagal membuat pesanan"))
 		}
 		return
+	}
+
+	// Create payment verification record
+	verifier := NewPaymentVerifier(b.config.BotToken) // Use bot token as secret key
+	verificationHash := verifier.GenerateVerificationHash(orderID, totalAmount, qrisPayment.QRString)
+	
+	err = b.db.CreatePaymentVerification(orderID, totalAmount, qrisPayment.QRString, verificationHash)
+	if err != nil {
+		logrus.Errorf("Failed to create payment verification for order %s: %v", orderID, err)
 	}
 
 	// Clear cart after successful order creation

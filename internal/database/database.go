@@ -147,6 +147,50 @@ func (db *DB) migrate() error {
 			sent_at DATETIME
 		)`,
 
+		// Product accounts table (email|password stock)
+		`CREATE TABLE IF NOT EXISTS product_accounts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			product_id INTEGER NOT NULL,
+			email TEXT NOT NULL,
+			password TEXT NOT NULL,
+			is_sold BOOLEAN DEFAULT FALSE,
+			sold_to_user_id INTEGER,
+			sold_order_id TEXT,
+			sold_at DATETIME,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE,
+			FOREIGN KEY (sold_to_user_id) REFERENCES users (user_id) ON DELETE SET NULL
+		)`,
+
+		// Payment verifications table (anti-manipulation)
+		`CREATE TABLE IF NOT EXISTS payment_verifications (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			order_id TEXT NOT NULL,
+			expected_amount INTEGER NOT NULL,
+			qris_payload TEXT NOT NULL,
+			verification_hash TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			verified_at DATETIME,
+			FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE
+		)`,
+
+		// Sold accounts tracking
+		`CREATE TABLE IF NOT EXISTS sold_accounts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			order_id TEXT NOT NULL,
+			product_id INTEGER NOT NULL,
+			account_id INTEGER NOT NULL,
+			user_id INTEGER NOT NULL,
+			email TEXT NOT NULL,
+			password TEXT NOT NULL,
+			sold_price INTEGER NOT NULL,
+			sold_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
+			FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE,
+			FOREIGN KEY (account_id) REFERENCES product_accounts (id) ON DELETE CASCADE,
+			FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+		)`,
+
 		// Indexes for better performance
 		`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`,
 		`CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)`,
@@ -159,6 +203,11 @@ func (db *DB) migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_user_interactions_user ON user_interactions(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_user_interactions_type ON user_interactions(interaction_type)`,
 		`CREATE INDEX IF NOT EXISTS idx_broadcasts_created ON broadcasts(created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_product_accounts_product ON product_accounts(product_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_product_accounts_sold ON product_accounts(is_sold)`,
+		`CREATE INDEX IF NOT EXISTS idx_payment_verifications_order ON payment_verifications(order_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_sold_accounts_order ON sold_accounts(order_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_sold_accounts_product ON sold_accounts(product_id)`,
 	}
 
 	for _, migration := range migrations {
@@ -270,7 +319,78 @@ func (db *DB) insertSampleData() error {
 		}
 	}
 
-	logrus.Info("✅ Sample products inserted successfully")
+	// Insert sample accounts for products
+	if err := db.insertSampleAccounts(); err != nil {
+		return fmt.Errorf("failed to insert sample accounts: %w", err)
+	}
+
+	logrus.Info("✅ Sample products and accounts inserted successfully")
+	return nil
+}
+
+// insertSampleAccounts inserts sample email|password accounts for products
+func (db *DB) insertSampleAccounts() error {
+	// Get all products to add accounts
+	products, err := db.GetProducts("", 100, 0)
+	if err != nil {
+		return err
+	}
+
+	sampleAccounts := map[string][]struct {
+		Email    string
+		Password string
+	}{
+		"Spotify Premium 1 Bulan": {
+			{"spotify.premium1@gmail.com", "SpotifyPass123!"},
+			{"premium.spotify2@gmail.com", "MusicLover456@"},
+			{"spotify.user3@gmail.com", "Premium789#"},
+			{"music.premium4@gmail.com", "SpotifyVIP999$"},
+			{"premium.music5@gmail.com", "Spotify2024!@"},
+		},
+		"Netflix Premium 1 Bulan": {
+			{"netflix.premium1@gmail.com", "NetflixHD123!"},
+			{"premium.netflix2@gmail.com", "StreamVIP456@"},
+			{"netflix.user3@gmail.com", "Premium789#"},
+			{"stream.premium4@gmail.com", "NetflixUHD999$"},
+			{"premium.stream5@gmail.com", "Netflix2024!@"},
+		},
+		"YouTube Premium 1 Bulan": {
+			{"youtube.premium1@gmail.com", "YTPremium123!"},
+			{"premium.youtube2@gmail.com", "VideoVIP456@"},
+			{"youtube.user3@gmail.com", "Premium789#"},
+			{"video.premium4@gmail.com", "YouTubeVIP999$"},
+			{"premium.video5@gmail.com", "YouTube2024!@"},
+		},
+		"Canva Pro 1 Bulan": {
+			{"canva.pro1@gmail.com", "CanvaPro123!"},
+			{"pro.canva2@gmail.com", "DesignVIP456@"},
+			{"canva.user3@gmail.com", "Premium789#"},
+			{"design.pro4@gmail.com", "CanvaVIP999$"},
+			{"pro.design5@gmail.com", "Canva2024!@"},
+		},
+		"Adobe Creative Cloud": {
+			{"adobe.cc1@gmail.com", "AdobeCC123!"},
+			{"creative.adobe2@gmail.com", "DesignSuite456@"},
+			{"adobe.user3@gmail.com", "Creative789#"},
+			{"cc.premium4@gmail.com", "AdobeVIP999$"},
+			{"premium.adobe5@gmail.com", "Adobe2024!@"},
+		},
+	}
+
+	for _, product := range products {
+		if accounts, exists := sampleAccounts[product.Name]; exists {
+			for _, account := range accounts {
+				_, err := db.Exec(`
+					INSERT INTO product_accounts (product_id, email, password)
+					VALUES (?, ?, ?)
+				`, product.ID, account.Email, account.Password)
+				if err != nil {
+					return fmt.Errorf("failed to insert account for product %s: %w", product.Name, err)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
