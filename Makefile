@@ -116,7 +116,27 @@ setup: ## Setup development environment
 # Admin tools
 admin: build ## Run admin CLI tools
 	@echo "🔧 Starting admin tools..."
-	./bin/$(BINARY_NAME) -admin
+	go run cmd/admin/main.go
+
+# QRIS tools
+qris-test: ## Build and run QRIS test tool
+	@echo "🔧 Building QRIS test tool..."
+	go build -o bin/qris-test cmd/qris-test/main.go
+	@echo "✅ QRIS test tool built: bin/qris-test"
+	@echo "Usage: ./bin/qris-test [upload|generate|status|test]"
+
+qris-upload: qris-test ## Upload QRIS static image (requires image path)
+	@if [ -z "$(IMAGE)" ]; then \
+		echo "❌ Usage: make qris-upload IMAGE=path/to/qr.png"; \
+	else \
+		./bin/qris-test upload $(IMAGE); \
+	fi
+
+qris-status: qris-test ## Show QRIS configuration status
+	@./bin/qris-test status
+
+qris-generate: qris-test ## Generate test QRIS
+	@./bin/qris-test test
 
 # Monitoring
 logs: ## Show application logs (if running with systemd)
@@ -135,6 +155,7 @@ quick-start: setup build ## Quick start for new users
 	@echo "📋 Next steps:"
 	@echo "1. Edit .env file with your bot token and admin IDs"
 	@echo "2. Run 'make run' to start the bot"
+	@echo "3. Setup QRIS dinamis dengan /qrissetup di Telegram"
 	@echo ""
 	@echo "🤖 To get bot token:"
 	@echo "   - Chat with @BotFather on Telegram"
@@ -142,6 +163,11 @@ quick-start: setup build ## Quick start for new users
 	@echo ""
 	@echo "🆔 To get your user ID:"
 	@echo "   - Chat with @userinfobot on Telegram"
+	@echo ""
+	@echo "💳 To setup QRIS:"
+	@echo "   - Start bot with 'make run'"
+	@echo "   - Use /qrissetup command in Telegram"
+	@echo "   - Upload static QR from your bank/e-wallet"
 	@echo ""
 
 # Release

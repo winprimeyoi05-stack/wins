@@ -81,6 +81,10 @@ func (b *Bot) handleCallbackQuery(callback *tgbotapi.CallbackQuery) {
 		if len(parts) > 1 {
 			b.handleAdminCallback(callback, parts[1])
 		}
+	case "qris":
+		if len(parts) > 1 {
+			b.handleQRISCallback(callback, parts[1])
+		}
 	default:
 		logrus.Warnf("Unknown callback data: %s", data)
 	}
@@ -447,6 +451,12 @@ func (b *Bot) handleCheckout(callback *tgbotapi.CallbackQuery) {
 		return
 	}
 
+	// Check if real QRIS is configured
+	if !b.realQRISService.IsConfigured() {
+		b.api.Request(tgbotapi.NewCallback(callback.ID, "❌ Sistem pembayaran belum dikonfigurasi"))
+		return
+	}
+
 	// Calculate total
 	totalAmount := 0
 	var orderItems []models.OrderItem
@@ -461,11 +471,11 @@ func (b *Bot) handleCheckout(callback *tgbotapi.CallbackQuery) {
 		})
 	}
 
-	// Generate order ID
-	orderID := b.paymentService.GenerateOrderID()
+	// Generate order ID using real QRIS service
+	orderID := b.realQRISService.GenerateOrderID()
 
-	// Generate QRIS payment
-	qrisPayment, qrImage, err := b.paymentService.GenerateQRIS(orderID, totalAmount)
+	// Generate dynamic QRIS payment
+	qrisPayment, qrImage, err := b.realQRISService.GenerateDynamicQRIS(orderID, totalAmount)
 	if err != nil {
 		logrus.Errorf("Failed to generate QRIS for order %s: %v", orderID, err)
 		b.api.Request(tgbotapi.NewCallback(callback.ID, "❌ Gagal membuat pembayaran"))
@@ -511,16 +521,20 @@ func (b *Bot) handleCheckout(callback *tgbotapi.CallbackQuery) {
 		Bytes: qrImage,
 	})
 
-	// Payment instructions
-	instructions := b.paymentService.GetPaymentInstructions(orderID, totalAmount)
+	// Payment instructions using real QRIS service
+	instructions := b.realQRISService.GetPaymentInstructions(orderID, totalAmount)
 	qrMsg.Caption = instructions
 	qrMsg.ParseMode = tgbotapi.ModeMarkdown
 
 	// Add supported banks info
-	supportedBanks := b.paymentService.GetSupportedBanks()
+	supportedBanks := b.realQRISService.GetSupportedBanks()
 	qrMsg.Caption += "\n\n📱 *Aplikasi yang mendukung QRIS:*\n"
-	for _, bank := range supportedBanks {
+	for i, bank := range supportedBanks {
 		qrMsg.Caption += fmt.Sprintf("• %s\n", bank)
+		if i >= 9 { // Show first 10 only to avoid message length limit
+			qrMsg.Caption += fmt.Sprintf("• ... dan %d lainnya\n", len(supportedBanks)-10)
+			break
+		}
 	}
 
 	// Add keyboard for order management

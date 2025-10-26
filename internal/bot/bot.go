@@ -10,6 +10,7 @@ import (
 	"telegram-premium-store/internal/database"
 	"telegram-premium-store/internal/models"
 	"telegram-premium-store/internal/payment"
+	"telegram-premium-store/internal/qris"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/sirupsen/logrus"
@@ -17,12 +18,13 @@ import (
 
 // Bot represents the Telegram bot
 type Bot struct {
-	api            *tgbotapi.BotAPI
-	config         *config.Config
-	db             *database.DB
-	paymentService *payment.QRISService
-	messages       *config.Messages
-	updates        tgbotapi.UpdatesChannel
+	api              *tgbotapi.BotAPI
+	config           *config.Config
+	db               *database.DB
+	paymentService   *payment.QRISService
+	realQRISService  *qris.RealQRISService
+	messages         *config.Messages
+	updates          tgbotapi.UpdatesChannel
 }
 
 // New creates a new bot instance
@@ -35,11 +37,12 @@ func New(cfg *config.Config, db *database.DB, paymentService *payment.QRISServic
 	api.Debug = cfg.LogLevel == "DEBUG"
 
 	return &Bot{
-		api:            api,
-		config:         cfg,
-		db:             db,
-		paymentService: paymentService,
-		messages:       config.GetMessages(),
+		api:              api,
+		config:           cfg,
+		db:               db,
+		paymentService:   paymentService,
+		realQRISService:  qris.NewRealQRISService(cfg),
+		messages:         config.GetMessages(),
 	}, nil
 }
 
@@ -87,7 +90,12 @@ func (b *Bot) handleUpdate(update tgbotapi.Update) {
 		if update.Message.IsCommand() {
 			b.handleCommand(update.Message)
 		} else {
-			b.handleMessage(update.Message)
+			// Check if it's a QRIS image upload
+			if update.Message.Photo != nil && b.isUserInState(update.Message.From.ID, "waiting_qris_upload") {
+				b.handleQRISImageUpload(update.Message)
+			} else {
+				b.handleMessage(update.Message)
+			}
 		}
 	}
 }
@@ -134,6 +142,10 @@ func (b *Bot) handleCommand(message *tgbotapi.Message) {
 		b.handleOrders(message)
 	case "stats":
 		b.handleStats(message)
+	case "qrissetup":
+		b.handleQRISSetup(message)
+	case "qristest":
+		b.handleQRISTestCommand(message)
 	default:
 		b.sendMessage(message.Chat.ID, "❌ Perintah tidak dikenal. Ketik /help untuk bantuan.")
 	}

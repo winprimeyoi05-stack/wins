@@ -29,23 +29,33 @@ Bot Telegram yang dibangun dengan **Go (Golang)** untuk penjualan aplikasi premi
 - 🔄 **Auto-reload** development dengan Air
 - 🛠️ **Makefile** untuk task automation
 
-## 💳 Sistem Pembayaran QRIS
+## 💳 Sistem Pembayaran QRIS Dinamis
 
-Bot ini menggunakan **QRIS (Quick Response Code Indonesian Standard)** yang mendukung semua aplikasi e-wallet dan mobile banking di Indonesia:
+Bot ini menggunakan **QRIS Dinamis Real** yang bekerja dengan cara upload QR Code statis dari bank/e-wallet, kemudian sistem akan mengekstrak payload dan generate QR Code dinamis sesuai nominal pesanan:
+
+### 🔄 **Cara Kerja QRIS Dinamis:**
+1. **Admin Upload QR Statis** - Upload QR Code dari bank/e-wallet
+2. **Ekstraksi Payload** - Sistem extract informasi merchant otomatis
+3. **Generate Dinamis** - QR Code baru dengan nominal sesuai pesanan
+4. **Auto Expiry** - QR Code berlaku 15 menit per transaksi
 
 ### 🏦 **Bank yang Didukung:**
 - BCA Mobile, BNI Mobile Banking, BRI Mobile
-- Mandiri Online, CIMB Niaga, Jenius
+- Mandiri Online, CIMB Niaga, Permata Mobile
+- Danamon D-Bank, OCBC OneB
 
 ### 💰 **E-Wallet yang Didukung:**
 - DANA, OVO, GoPay, LinkAja
-- ShopeePay, Sakuku, i.saku, DOKU Wallet
+- ShopeePay, Jenius, Sakuku, i.saku
+- DOKU Wallet, Flip, Bibit, Akulaku PayLater
 
-### 🔄 **Fitur QRIS:**
-- ✅ QR Code dinamis dengan nominal otomatis
-- ⏰ Expiry time 15 menit per transaksi
-- 🔐 Secure payment dengan EMV QR Code standard
-- 📱 Compatible dengan semua aplikasi QRIS
+### ✨ **Fitur QRIS Real:**
+- ✅ **Upload & Extract** - Upload QR statis, auto extract payload
+- ✅ **Dynamic Generation** - QR Code dengan nominal berbeda-beda
+- ✅ **EMV Standard** - Compatible dengan semua aplikasi QRIS Indonesia
+- ✅ **Auto Validation** - Validasi merchant info dan payload
+- ✅ **Secure Storage** - Konfigurasi tersimpan aman lokal
+- ✅ **Easy Setup** - Setup sekali, langsung bisa digunakan
 
 ## 🚀 Quick Start
 
@@ -64,10 +74,21 @@ nano .env
 # Isi minimal konfigurasi ini:
 BOT_TOKEN=your_bot_token_from_botfather
 ADMIN_IDS=your_telegram_user_id
-QRIS_MERCHANT_NAME=Nama Toko Anda
 ```
 
-### 3. **Jalankan Bot**
+### 3. **Setup QRIS Dinamis**
+```bash
+# Jalankan bot terlebih dahulu
+make run
+
+# Di Telegram, gunakan command:
+/qrissetup
+
+# Upload QR Code statis dari bank/e-wallet Anda
+# Sistem akan otomatis extract payload dan setup QRIS dinamis
+```
+
+### 4. **Jalankan Bot**
 ```bash
 make run
 ```
@@ -121,8 +142,13 @@ nano .env
 ```env
 BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
 ADMIN_IDS=123456789
-QRIS_MERCHANT_NAME=Premium Apps Store
-QRIS_MERCHANT_ID=ID1234567890123
+```
+
+**Setup QRIS setelah bot berjalan:**
+```
+1. /qrissetup di Telegram
+2. Upload QR Code statis dari bank/e-wallet
+3. Sistem otomatis extract dan setup QRIS dinamis
 ```
 
 ## 🏃‍♂️ Menjalankan Bot
@@ -255,7 +281,14 @@ git push heroku main
 
 ### **Untuk Admin:**
 
-1. **Akses Panel Admin**
+1. **Setup QRIS Dinamis**
+   ```
+   /qrissetup → Setup sistem pembayaran
+   📤 Upload QR statis dari bank/e-wallet
+   🔍 Test generate QR dinamis
+   ```
+
+2. **Akses Panel Admin**
    ```
    /admin → Dashboard admin
    /addproduct → Tambah produk baru
@@ -263,7 +296,7 @@ git push heroku main
    /orders → Kelola pesanan
    ```
 
-2. **Tambah Produk**
+3. **Tambah Produk**
    ```
    Format: /addproduct Nama | Deskripsi | Harga | Kategori
    Contoh: /addproduct Spotify Premium | Musik unlimited | 25000 | music
