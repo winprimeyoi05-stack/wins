@@ -11,6 +11,8 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // handleCallbackQuery processes callback queries from inline keyboards
@@ -565,7 +567,7 @@ func (b *Bot) handleCheckout(callback *tgbotapi.CallbackQuery) {
 	}
 
 	// Create order with account assignment
-	assignedAccounts, err := b.db.CreateOrderWithAccounts(order)
+	_, err = b.db.CreateOrderWithAccounts(order)
 	if err != nil {
 		logrus.Errorf("Failed to create order %s: %v", orderID, err)
 		if strings.Contains(err.Error(), "insufficient accounts") {
@@ -663,7 +665,7 @@ func (b *Bot) handleOrderDetail(callback *tgbotapi.CallbackQuery, orderID string
 	text.WriteString(fmt.Sprintf("📅 Tanggal: %s\n", order.CreatedAt.Format("02/01/2006 15:04")))
 	text.WriteString(fmt.Sprintf("💰 Total: %s\n", models.FormatPrice(order.TotalAmount, b.config.CurrencySymbol)))
 	text.WriteString(fmt.Sprintf("💳 Metode: QRIS\n"))
-	text.WriteString(fmt.Sprintf("📊 Status: %s %s\n\n", b.getStatusEmoji(order.PaymentStatus), strings.Title(string(order.PaymentStatus))))
+	text.WriteString(fmt.Sprintf("📊 Status: %s %s\n\n", b.getStatusEmoji(order.PaymentStatus), cases.Title(language.Und).String(string(order.PaymentStatus))))
 
 	if order.QRISExpiry != nil {
 		if b.paymentService.IsExpired(order.QRISExpiry) {
