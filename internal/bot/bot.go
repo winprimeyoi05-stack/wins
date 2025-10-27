@@ -2,9 +2,7 @@ package bot
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
-	"time"
 
 	"telegram-premium-store/internal/config"
 	"telegram-premium-store/internal/database"
@@ -15,6 +13,8 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // Bot represents the Telegram bot
@@ -447,7 +447,7 @@ func (b *Bot) handleHistory(message *tgbotapi.Message) {
 		text.WriteString(fmt.Sprintf("🔸 Order #%s\n", order.ID[:8]))
 		text.WriteString(fmt.Sprintf("💰 Total: %s\n", models.FormatPrice(order.TotalAmount, b.config.CurrencySymbol)))
 		text.WriteString(fmt.Sprintf("📅 Tanggal: %s\n", order.CreatedAt.Format("02/01/2006 15:04")))
-		text.WriteString(fmt.Sprintf("📊 Status: %s %s\n", statusEmoji, strings.Title(string(order.PaymentStatus))))
+		text.WriteString(fmt.Sprintf("📊 Status: %s %s\n", statusEmoji, cases.Title(language.Und).String(string(order.PaymentStatus))))
 		
 		if len(order.Items) > 0 {
 			text.WriteString(fmt.Sprintf("📦 Item: %s", order.Items[0].ProductName))

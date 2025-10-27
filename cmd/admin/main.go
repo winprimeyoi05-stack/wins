@@ -96,7 +96,7 @@ func (a *AdminCLI) showMenu() {
 	fmt.Println("7. 📊 Statistik Bot")
 	fmt.Println("8. 🏷️ Kelola Kategori")
 	fmt.Println("0. 🚪 Keluar")
-	fmt.Println("=" * 50)
+	fmt.Println(strings.Repeat("=", 50))
 }
 
 func (a *AdminCLI) readInput(prompt string) string {
@@ -255,7 +255,7 @@ func (a *AdminCLI) showStatistics() {
 	fmt.Printf("💰 Total Pendapatan    : -\n")
 	fmt.Printf("⏳ Pesanan Pending     : -\n")
 	fmt.Printf("📅 Pesanan Hari Ini    : -\n")
-	fmt.Println("=" * 50)
+	fmt.Println(strings.Repeat("=", 50))
 	fmt.Println("💡 Statistik lengkap akan tersedia di versi mendatang.")
 }
 

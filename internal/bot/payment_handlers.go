@@ -162,7 +162,7 @@ func (b *Bot) sendAccountsToBuyer(order *models.Order, accounts []models.SoldAcc
 			keyboard = append(keyboard, tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData(
 					fmt.Sprintf("📋 Copy Akun #%d", accountButtonIndex),
-					fmt.Sprintf("copy_account:%d:%s", account.ID, orderID),
+					fmt.Sprintf("copy_account:%d:%s", account.ID, order.ID),
 				),
 			))
 			accountButtonIndex++
