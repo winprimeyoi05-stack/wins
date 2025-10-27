@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"telegram-premium-store/internal/models"
+	"telegram-premium-store/internal/payment"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/sirupsen/logrus"
@@ -104,6 +105,25 @@ func (b *Bot) handleCallbackQuery(callback *tgbotapi.CallbackQuery) {
 	case "qris":
 		if len(parts) > 1 {
 			b.handleQRISCallback(callback, parts[1])
+		}
+	case "simulate_payment":
+		if len(parts) > 1 {
+			b.handleSimulatePayment(callback, parts[1])
+		}
+	case "copy_account":
+		// Handle copy account callback
+		if len(parts) >= 3 {
+			accountID := parts[1]
+			orderID := parts[2]
+			b.handleCopyAccount(callback, accountID, orderID)
+		}
+	case "product_header":
+		// Just acknowledge, this is a display button
+		b.api.Request(tgbotapi.NewCallback(callback.ID, ""))
+	case "investigate":
+		// Handle investigation request
+		if len(parts) > 1 {
+			b.handleInvestigateOrder(callback, parts[1])
 		}
 	default:
 		logrus.Warnf("Unknown callback data: %s", data)
@@ -557,7 +577,7 @@ func (b *Bot) handleCheckout(callback *tgbotapi.CallbackQuery) {
 	}
 
 	// Create payment verification record
-	verifier := NewPaymentVerifier(b.config.BotToken) // Use bot token as secret key
+	verifier := payment.NewPaymentVerifier(b.config.BotToken) // Use bot token as secret key
 	verificationHash := verifier.GenerateVerificationHash(orderID, totalAmount, qrisPayment.QRString)
 	
 	err = b.db.CreatePaymentVerification(orderID, totalAmount, qrisPayment.QRString, verificationHash)
@@ -663,14 +683,23 @@ func (b *Bot) handleOrderDetail(callback *tgbotapi.CallbackQuery, orderID string
 			models.FormatPrice(subtotal, b.config.CurrencySymbol)))
 	}
 
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📞 Hubungi Admin", "contact"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🏠 Menu Utama", "start"),
-		),
-	)
+	var keyboardRows [][]tgbotapi.InlineKeyboardButton
+	
+	// Add simulate payment button for admins if order is pending
+	if b.config.IsAdmin(callback.From.ID) && order.PaymentStatus == models.PaymentStatusPending {
+		keyboardRows = append(keyboardRows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🧪 [Admin] Simulasi Pembayaran", fmt.Sprintf("simulate_payment:%s", orderID)),
+		))
+	}
+	
+	keyboardRows = append(keyboardRows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("📞 Hubungi Admin", "contact"),
+	))
+	keyboardRows = append(keyboardRows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("🏠 Menu Utama", "start"),
+	))
+	
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(keyboardRows...)
 
 	edit := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, text.String())
 	edit.ParseMode = tgbotapi.ModeMarkdown
@@ -840,4 +869,65 @@ func (b *Bot) handleAdminOrders(callback *tgbotapi.CallbackQuery) {
 	edit.ReplyMarkup = &keyboard
 
 	b.api.Send(edit)
+}
+
+// handleCopyAccount handles copy account callback (displays copyable text)
+func (b *Bot) handleCopyAccount(callback *tgbotapi.CallbackQuery, accountID, orderID string) {
+	// This callback is mainly for UI interaction feedback
+	b.api.Request(tgbotapi.NewCallback(callback.ID, "✅ Tap pada kredensial untuk menyalin"))
+}
+
+// handleInvestigateOrder handles investigation request from admin
+func (b *Bot) handleInvestigateOrder(callback *tgbotapi.CallbackQuery, orderID string) {
+	if !b.config.IsAdmin(callback.From.ID) {
+		b.api.Request(tgbotapi.NewCallback(callback.ID, "❌ Akses ditolak"))
+		return
+	}
+
+	// Get order details
+	order, err := b.db.GetOrder(orderID)
+	if err != nil || order == nil {
+		b.api.Request(tgbotapi.NewCallback(callback.ID, "❌ Order tidak ditemukan"))
+		return
+	}
+
+	// Get payment verification
+	verification, err := b.db.GetPaymentVerification(orderID)
+	
+	var text strings.Builder
+	text.WriteString("🔍 *INVESTIGASI ORDER*\n\n")
+	text.WriteString(fmt.Sprintf("🆔 Order ID: `%s`\n", orderID))
+	text.WriteString(fmt.Sprintf("👤 User ID: `%d`\n", order.UserID))
+	text.WriteString(fmt.Sprintf("💰 Total: %s\n", models.FormatPrice(order.TotalAmount, b.config.CurrencySymbol)))
+	text.WriteString(fmt.Sprintf("📊 Status: %s\n", order.PaymentStatus))
+	text.WriteString(fmt.Sprintf("📅 Dibuat: %s\n\n", order.CreatedAt.Format("02/01/2006 15:04")))
+
+	if verification != nil {
+		text.WriteString("🔐 *Verification Data:*\n")
+		text.WriteString(fmt.Sprintf("• Expected Amount: %s\n", models.FormatPrice(verification.ExpectedAmount, b.config.CurrencySymbol)))
+		text.WriteString(fmt.Sprintf("• Hash: `%s`\n", verification.VerificationHash[:16]))
+		if verification.VerifiedAt != nil {
+			text.WriteString(fmt.Sprintf("• Verified: %s\n", verification.VerifiedAt.Format("02/01/2006 15:04")))
+		} else {
+			text.WriteString("• Verified: ❌ Not yet\n")
+		}
+	} else {
+		text.WriteString("⚠️ No verification data found\n")
+	}
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📄 Detail Order", fmt.Sprintf("order:%s", orderID)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Panel Admin", "admin:main"),
+		),
+	)
+
+	edit := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, text.String())
+	edit.ParseMode = tgbotapi.ModeMarkdown
+	edit.ReplyMarkup = &keyboard
+
+	b.api.Send(edit)
+	b.api.Request(tgbotapi.NewCallback(callback.ID, ""))
 }
