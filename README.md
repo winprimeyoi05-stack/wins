@@ -16,6 +16,7 @@ Bot Telegram yang dibangun dengan **Go (Golang)** untuk penjualan aplikasi premi
 - ❌ **Cancel Transaksi** - Batalkan pesanan sebelum expired
 - 🔔 **Real-time Notifications** - Update status order otomatis
 - 🔐 **Automatic Account Delivery** - Terima akun dalam format copyable
+- 📦 **Multi-Format Support** - Akun, Link, Kode, atau Custom format
 
 ### 👨‍💼 **Untuk Admin**
 - 📊 **Dashboard Admin** untuk monitoring
@@ -30,6 +31,7 @@ Bot Telegram yang dibangun dengan **Go (Golang)** untuk penjualan aplikasi premi
 - 🚨 **Daily Stock Alerts** - Laporan stok harian (8 PM)
 - 🛡️ **Payment Security** - Deteksi manipulasi otomatis
 - 📊 **Account Tracking** - Monitor akun terjual
+- 📝 **Multi-Format Stock** - Tambah stok dengan berbagai format (akun/link/kode/custom)
 
 ### 🔧 **Fitur Teknis**
 - ⚡ **High Performance** dengan Go
@@ -42,6 +44,41 @@ Bot Telegram yang dibangun dengan **Go (Golang)** untuk penjualan aplikasi premi
 - ⏰ **Background Scheduler** - Auto-expire orders, daily reports
 - 🔐 **HMAC-SHA256 Verification** - Validasi integritas pembayaran
 - 🎯 **Stock Validation** - Real-time stock checking
+
+## 📦 Multi-Format Product Support
+
+Bot ini sekarang mendukung **berbagai format produk digital**, tidak hanya terbatas pada format email|password!
+
+### 🎯 **Format yang Didukung:**
+
+| Format | Icon | Contoh | Use Case |
+|--------|------|--------|----------|
+| **Account** | 🔐 | `user@gmail.com \| pass123` | Login credentials |
+| **Link** | 🔗 | `https://netflix.com/redeem?code=ABC` | Redeem URLs |
+| **Code** | 🎫 | `SPOTIFY-PREMIUM-XYZ789` | Voucher/License keys |
+| **Custom** | 📝 | `UserID: 123 \| Level: 100` | Game accounts, etc |
+
+### 🛠️ **Cara Menambahkan Stock:**
+
+Admin dapat menambahkan stock dengan berbagai format menggunakan command `/addstock`:
+
+```
+/addstock [product_id] [type] [data]
+
+Contoh:
+/addstock 1 account premium.spotify@gmail.com | Spotify2024!
+/addstock 2 link https://netflix.com/redeem?code=NFLX-ABC-1234
+/addstock 3 code YOUTUBE-PREMIUM-XYZ789
+/addstock 10 custom Player ID: 987654321 | Server: Asia | Level: 100
+```
+
+### ✅ **Keuntungan:**
+- ✅ **Fleksibel** - Tidak terbatas pada format email|password
+- ✅ **User-Friendly** - Instruksi spesifik untuk setiap format
+- ✅ **Backward Compatible** - Data lama tetap berfungsi
+- ✅ **Easy to Use** - Command sederhana untuk admin
+
+Detail lengkap: **[MULTI_FORMAT_GUIDE.md](MULTI_FORMAT_GUIDE.md)**
 
 ## 💳 Sistem Pembayaran QRIS Dinamis
 
@@ -85,10 +122,12 @@ Bot ini menggunakan **QRIS Dinamis Real** yang bekerja dengan cara upload QR Cod
 - ✅ **Stock Movement Tracking** - Track available → sold
 
 ### 2. 🔐 **Sistem Pengiriman Akun Otomatis**
-- ✅ **Copyable Format** - Format `email | password` mudah dicopy
+- ✅ **Multi-Format Support** - Mendukung account, link, code, dan custom format
+- ✅ **Copyable Format** - Format mudah dicopy untuk semua tipe
 - ✅ **Auto Delivery** - Kirim akun otomatis saat payment sukses
 - ✅ **Sold Accounts Tracking** - Track semua akun terjual
 - ✅ **Security Instructions** - Panduan keamanan untuk pembeli
+- ✅ **Format-Specific Instructions** - Instruksi spesifik per format produk
 
 ### 3. 🔔 **Notifikasi & Alert Otomatis**
 - ✅ **Admin Payment Alerts** - Real-time saat ada pembayaran
@@ -321,6 +360,7 @@ git push heroku main
 - `/admin` - Akses panel admin
 - `/qrissetup` - Setup QRIS dinamis
 - `/addproduct` - Tambah produk baru (quick add)
+- `/addstock` - Tambah stock dengan multi-format (account/link/code/custom)
 - `/users` - Statistik user
 - `/orders` - Kelola pesanan
 
@@ -414,14 +454,23 @@ git push heroku main
    • Last activity tracking
    ```
 
-3. **Tambah Produk**
+3. **Tambah Produk & Stock**
    ```
+   # Tambah produk baru
    Format: /addproduct Nama | Deskripsi | Harga | Kategori
    Contoh: /addproduct Spotify Premium | Musik unlimited | 25000 | music
    
-   Setelah tambah produk, jangan lupa:
-   • Upload akun via /admin → Kelola Stok → Tambah Akun
-   • Format: email | password (satu per baris)
+   # Tambah stock dengan multi-format (BARU!)
+   Format: /addstock [product_id] [type] [data]
+   
+   Contoh:
+   /addstock 1 account premium@spotify.com | Pass123!
+   /addstock 2 link https://netflix.com/redeem?code=ABC
+   /addstock 3 code SPOTIFY-PREMIUM-XYZ789
+   /addstock 4 custom UserID: 123 | Level: 100
+   
+   Atau via admin panel:
+   • /admin → Kelola Stok → Tambah Akun
    ```
 
 4. **Monitoring & Alerts**
@@ -809,6 +858,12 @@ Bot ini dilengkapi dengan dokumentasi komprehensif untuk berbagai aspek:
 - 📊 **[STATUS_IMPLEMENTASI.md](STATUS_IMPLEMENTASI.md)** - Status implementasi fitur
 - 📝 **[CHANGELOG.md](CHANGELOG.md)** - Riwayat perubahan versi
 
+### **Dokumentasi Multi-Format (v2.0.0):**
+- 📦 **[README_MULTIFORMAT.md](README_MULTIFORMAT.md)** - Quick start multi-format
+- 📖 **[MULTI_FORMAT_GUIDE.md](MULTI_FORMAT_GUIDE.md)** - Panduan lengkap multi-format
+- 📝 **[MULTI_FORMAT_EXAMPLES.md](MULTI_FORMAT_EXAMPLES.md)** - Contoh-contoh praktis
+- 🚀 **[CHANGELOG_MULTIFORMAT.md](CHANGELOG_MULTIFORMAT.md)** - Changelog multi-format
+
 ### **Fitur Kunci yang Perlu Dipahami:**
 
 #### 🔐 Payment Verification System
@@ -861,7 +916,14 @@ A: Ya, sistem mengirim notifikasi untuk payment sukses, order expired, dan stock
 
 ## 🎯 Roadmap
 
-### **v1.0.0 - ✅ COMPLETED** (Current Version)
+### **v2.0.0 - ✅ COMPLETED** (Current Version)
+- [x] **Multi-Format Product Support** - Account, Link, Code, Custom format
+- [x] `/addstock` command untuk admin dengan multi-format
+- [x] Format-specific instructions untuk user
+- [x] Backward compatibility dengan data lama
+- [x] Auto migration untuk database lama
+
+### **v1.0.0 - ✅ COMPLETED**
 - [x] QRIS dinamis dengan auto-generate
 - [x] Sistem manajemen stok lanjutan
 - [x] Payment verification (HMAC-SHA256)
@@ -874,13 +936,15 @@ A: Ya, sistem mengirim notifikasi untuk payment sukses, order expired, dan stock
 - [x] Quantity selector
 - [x] Cancel transaction feature
 
-### **v1.1.0 - In Progress**
+### **v2.1.0 - In Progress**
 - [ ] Real payment gateway integration (Midtrans, Xendit)
 - [ ] Webhook handler untuk auto-payment detection
 - [ ] Advanced analytics dashboard
 - [ ] Product search functionality
 - [ ] Discount codes & promotions system
 - [ ] Customer review & rating
+- [ ] Format validation (URL validator untuk link, dll)
+- [ ] Bulk import stock dari CSV/Excel
 
 ### **v1.2.0 - Future**
 - [ ] Multi-language support (English, etc.)
@@ -897,7 +961,8 @@ A: Ya, sistem mengirim notifikasi untuk payment sukses, order expired, dan stock
 ## 🌟 Highlights & Statistics
 
 ### **Production-Ready Features:**
-- ✅ **11+ Advanced Features** fully implemented
+- ✅ **12+ Advanced Features** fully implemented
+- ✅ **Multi-Format Product Support** - Account/Link/Code/Custom
 - ✅ **Payment Verification** dengan HMAC-SHA256
 - ✅ **Auto Account Delivery** system
 - ✅ **Background Automation** scheduler
@@ -922,21 +987,29 @@ A: Ya, sistem mengirim notifikasi untuk payment sukses, order expired, dan stock
 ### **Code Statistics:**
 - 📁 **Files:** 20+ Go source files
 - 📝 **Lines of Code:** 3000+ lines
-- 📖 **Documentation:** 8 comprehensive docs
-- 🧪 **Features:** 11 advanced features
-- 🔧 **Commands:** 15+ bot commands
+- 📖 **Documentation:** 12 comprehensive docs (termasuk multi-format)
+- 🧪 **Features:** 12 advanced features
+- 🔧 **Commands:** 16+ bot commands
 - 🗄️ **DB Tables:** 10+ tables with relations
 
 ---
 
 ## 📜 Version Info
 
-**Current Version:** v1.0.0  
-**Release Date:** October 2024  
+**Current Version:** v2.0.0  
+**Release Date:** October 27, 2025  
 **Status:** ✅ Production Ready  
 **License:** MIT  
 
-### **What's New in v1.0.0:**
+### **What's New in v2.0.0:**
+- 📦 **Multi-Format Product Support** - Mendukung Account, Link, Code, dan Custom format
+- 🔧 **New Command `/addstock`** - Tambah stock dengan berbagai format
+- 📝 **Format-Specific Instructions** - Instruksi spesifik untuk setiap tipe produk
+- 🔄 **Auto Migration** - Database lama otomatis ter-migrate
+- ✅ **Backward Compatible** - Data lama tetap berfungsi sempurna
+- 📖 **Comprehensive Documentation** - 4 dokumen baru tentang multi-format
+
+### **Previous Version - v1.0.0:**
 - 🎉 Complete rewrite in Go (from Python)
 - ✨ 11 advanced features implemented
 - 🔒 Enhanced security with payment verification
