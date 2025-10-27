@@ -752,6 +752,8 @@ func (b *Bot) handleAdminCallback(callback *tgbotapi.CallbackQuery, action strin
 		b.handleAdminOrders(callback)
 	case "stock":
 		b.handleStockManagement(callback)
+	case "addstock":
+		b.handleAddProductStock(callback)
 	case "lowstock":
 		b.handleLowStock(callback)
 	case "categories":

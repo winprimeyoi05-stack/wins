@@ -197,36 +197,52 @@ func formatNumber(n int) string {
 	return string(result)
 }
 
-// ProductAccount represents email|password account for products
+// ProductContentType represents different types of product content
+type ProductContentType string
+
+const (
+	ContentTypeAccount ProductContentType = "account" // email | password
+	ContentTypeLink    ProductContentType = "link"    // URL/link
+	ContentTypeCode    ProductContentType = "code"    // redeem code/voucher
+	ContentTypeCustom  ProductContentType = "custom"  // custom text format
+)
+
+// ProductAccount represents different product delivery formats (account/link/code/custom)
 type ProductAccount struct {
-	ID           int       `json:"id" db:"id"`
-	ProductID    int       `json:"product_id" db:"product_id"`
-	Email        string    `json:"email" db:"email"`
-	Password     string    `json:"password" db:"password"`
-	IsSold       bool      `json:"is_sold" db:"is_sold"`
-	SoldToUserID *int64    `json:"sold_to_user_id" db:"sold_to_user_id"`
-	SoldOrderID  *string   `json:"sold_order_id" db:"sold_order_id"`
+	ID          int                `json:"id" db:"id"`
+	ProductID   int                `json:"product_id" db:"product_id"`
+	ContentType ProductContentType `json:"content_type" db:"content_type"`
+	ContentData string             `json:"content_data" db:"content_data"`
+	// Legacy fields for backward compatibility (deprecated, use ContentData instead)
+	Email        *string    `json:"email,omitempty" db:"email"`
+	Password     *string    `json:"password,omitempty" db:"password"`
+	IsSold       bool       `json:"is_sold" db:"is_sold"`
+	SoldToUserID *int64     `json:"sold_to_user_id" db:"sold_to_user_id"`
+	SoldOrderID  *string    `json:"sold_order_id" db:"sold_order_id"`
 	SoldAt       *time.Time `json:"sold_at" db:"sold_at"`
-	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
 }
 
-// SoldAccount represents sold account tracking
+// SoldAccount represents sold account tracking (supports multiple content formats)
 type SoldAccount struct {
-	ID              int       `json:"id" db:"id"`
-	OrderID         string    `json:"order_id" db:"order_id"`
-	ProductID       int       `json:"product_id" db:"product_id"`
-	AccountID       int       `json:"account_id" db:"account_id"`
-	UserID          int64     `json:"user_id" db:"user_id"`
-	Email           string    `json:"email" db:"email"`
-	Password        string    `json:"password" db:"password"`
-	SoldPrice       int       `json:"sold_price" db:"sold_price"`
-	SoldAt          time.Time `json:"sold_at" db:"sold_at"`
+	ID          int                `json:"id" db:"id"`
+	OrderID     string             `json:"order_id" db:"order_id"`
+	ProductID   int                `json:"product_id" db:"product_id"`
+	AccountID   int                `json:"account_id" db:"account_id"`
+	UserID      int64              `json:"user_id" db:"user_id"`
+	ContentType ProductContentType `json:"content_type" db:"content_type"`
+	ContentData string             `json:"content_data" db:"content_data"`
+	// Legacy fields for backward compatibility
+	Email       *string    `json:"email,omitempty" db:"email"`
+	Password    *string    `json:"password,omitempty" db:"password"`
+	SoldPrice   int        `json:"sold_price" db:"sold_price"`
+	SoldAt      time.Time  `json:"sold_at" db:"sold_at"`
 	
 	// Joined fields
-	ProductName     string  `json:"product_name,omitempty" db:"product_name"`
-	BuyerFirstName  *string `json:"buyer_first_name,omitempty" db:"first_name"`
-	BuyerLastName   *string `json:"buyer_last_name,omitempty" db:"last_name"`
-	BuyerUsername   *string `json:"buyer_username,omitempty" db:"username"`
+	ProductName    string  `json:"product_name,omitempty" db:"product_name"`
+	BuyerFirstName *string `json:"buyer_first_name,omitempty" db:"first_name"`
+	BuyerLastName  *string `json:"buyer_last_name,omitempty" db:"last_name"`
+	BuyerUsername  *string `json:"buyer_username,omitempty" db:"username"`
 }
 
 // PaymentVerification represents payment verification for anti-manipulation
@@ -255,9 +271,67 @@ type AccountCredentials struct {
 	Format   string `json:"format"` // "email | password"
 }
 
-// FormatAccountCredentials formats account as "email | password"
+// FormatContent formats product content based on type
+func (a *ProductAccount) FormatContent() string {
+	// If ContentData is set, use it
+	if a.ContentData != "" {
+		return a.ContentData
+	}
+	// Fallback to legacy format for backward compatibility
+	if a.Email != nil && a.Password != nil {
+		return fmt.Sprintf("%s | %s", *a.Email, *a.Password)
+	}
+	return ""
+}
+
+// GetContentLabel returns a label for the content type
+func (a *ProductAccount) GetContentLabel() string {
+	switch a.ContentType {
+	case ContentTypeAccount:
+		return "🔐 Akun"
+	case ContentTypeLink:
+		return "🔗 Link"
+	case ContentTypeCode:
+		return "🎫 Kode"
+	case ContentTypeCustom:
+		return "📝 Data"
+	default:
+		return "📦 Produk"
+	}
+}
+
+// FormatAccountCredentials formats account as "email | password" (deprecated)
 func (a *ProductAccount) FormatAccountCredentials() string {
-	return fmt.Sprintf("%s | %s", a.Email, a.Password)
+	return a.FormatContent()
+}
+
+// FormatContent formats sold account content based on type
+func (s *SoldAccount) FormatContent() string {
+	// If ContentData is set, use it
+	if s.ContentData != "" {
+		return s.ContentData
+	}
+	// Fallback to legacy format for backward compatibility
+	if s.Email != nil && s.Password != nil {
+		return fmt.Sprintf("%s | %s", *s.Email, *s.Password)
+	}
+	return ""
+}
+
+// GetContentLabel returns a label for the content type
+func (s *SoldAccount) GetContentLabel() string {
+	switch s.ContentType {
+	case ContentTypeAccount:
+		return "🔐 Akun"
+	case ContentTypeLink:
+		return "🔗 Link"
+	case ContentTypeCode:
+		return "🎫 Kode"
+	case ContentTypeCustom:
+		return "📝 Data"
+	default:
+		return "📦 Produk"
+	}
 }
 
 // GetBuyerName returns formatted buyer name
