@@ -42,6 +42,9 @@ type Config struct {
 	MaxCartItems    int
 	CurrencySymbol  string
 	DefaultImageURL string
+
+	// Payment Security
+	PaymentSecretKey string
 }
 
 // Messages contains all Indonesian messages for the bot
@@ -91,6 +94,9 @@ func Load() *Config {
 		MaxCartItems:    getEnvAsInt("MAX_CART_ITEMS", 10),
 		CurrencySymbol:  getEnv("CURRENCY_SYMBOL", "Rp"),
 		DefaultImageURL: getEnv("DEFAULT_PRODUCT_IMAGE", "https://via.placeholder.com/300x200?text=Premium+App"),
+
+		// Payment Security
+		PaymentSecretKey: getEnv("PAYMENT_SECRET_KEY", ""),
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strings"
 
 	"telegram-premium-store/internal/qris"
@@ -294,7 +293,9 @@ func (b *Bot) handleQRISImageUpload(message *tgbotapi.Message) {
 	}
 
 	// Send processing message
-	processingMsg := b.sendMessage(message.Chat.ID, "🔄 Memproses QR Code... Mohon tunggu...")
+	msg := tgbotapi.NewMessage(message.Chat.ID, "🔄 Memproses QR Code... Mohon tunggu...")
+	msg.ParseMode = tgbotapi.ModeMarkdown
+	processingMsg, _ := b.api.Send(msg)
 
 	// Process QRIS image
 	filename := fmt.Sprintf("qris_static_%d.jpg", message.Date)
@@ -343,21 +344,6 @@ func (b *Bot) handleQRISImageUpload(message *tgbotapi.Message) {
 	b.api.Send(editMsg)
 
 	logrus.Info("✅ QRIS static QR successfully processed by admin")
-}
-
-// User state management for QRIS upload
-var userStates = make(map[int64]string)
-
-func (b *Bot) setUserState(userID int64, state string) {
-	userStates[userID] = state
-}
-
-func (b *Bot) isUserInState(userID int64, state string) bool {
-	return userStates[userID] == state
-}
-
-func (b *Bot) clearUserState(userID int64) {
-	delete(userStates, userID)
 }
 
 // Add QRIS test command

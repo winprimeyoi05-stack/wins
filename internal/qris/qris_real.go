@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"image"
-	"image/jpeg"
-	"image/png"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -22,15 +19,22 @@ import (
 	"github.com/nfnt/resize"
 	"github.com/sirupsen/logrus"
 	qrcodegen "github.com/skip2/go-qrcode"
-	
-	qris "github.com/fyvri/go-qris/pkg/models"
 )
+
+// MerchantInfo holds merchant information extracted from QRIS
+type MerchantInfo struct {
+	MerchantID   string
+	MerchantName string
+	MerchantCity string
+	CountryCode  string
+	Currency     string
+}
 
 // RealQRISService handles real QRIS implementation with static QR upload and dynamic generation
 type RealQRISService struct {
 	config           *config.Config
 	staticQRPayload  string
-	merchantInfo     *qris.MerchantInfo
+	merchantInfo     *MerchantInfo
 	qrisUploadDir    string
 	qrisGeneratedDir string
 }
@@ -153,22 +157,152 @@ func (q *RealQRISService) isValidQRISPayload(payload string) bool {
 }
 
 // parseQRISPayload parses QRIS payload to extract merchant information
-func (q *RealQRISService) parseQRISPayload(payload string) (*qris.MerchantInfo, error) {
-	// Use go-qris library to parse
-	qrisData, err := qris.Decode(payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode QRIS: %w", err)
+func (q *RealQRISService) parseQRISPayload(payload string) (*MerchantInfo, error) {
+	// Simple parser for QRIS payload using TLV format
+	merchantInfo := &MerchantInfo{
+		CountryCode:  "ID",
+		Currency:     "360", // Indonesian Rupiah
 	}
 
-	merchantInfo := &qris.MerchantInfo{
-		MerchantID:   qrisData.MerchantAccountInformation.MerchantID,
-		MerchantName: qrisData.MerchantName,
-		MerchantCity: qrisData.MerchantCity,
-		CountryCode:  qrisData.CountryCode,
-		Currency:     qrisData.TransactionCurrency,
+	// Extract merchant name (tag 59)
+	if name := q.extractTLVValue(payload, "59"); name != "" {
+		merchantInfo.MerchantName = name
+	}
+
+	// Extract merchant city (tag 60)
+	if city := q.extractTLVValue(payload, "60"); city != "" {
+		merchantInfo.MerchantCity = city
+	}
+
+	// Extract merchant ID from merchant account information (tag 26)
+	if mai := q.extractTLVValue(payload, "26"); mai != "" {
+		// Extract merchant ID from MAI (tag 01)
+		if mid := q.extractTLVValue(mai, "01"); mid != "" {
+			merchantInfo.MerchantID = mid
+		}
+	}
+
+	// Validate that we extracted at least some info
+	if merchantInfo.MerchantName == "" && merchantInfo.MerchantCity == "" {
+		return nil, fmt.Errorf("failed to extract merchant information from QRIS")
 	}
 
 	return merchantInfo, nil
+}
+
+// extractTLVValue extracts value from TLV (Tag-Length-Value) format
+func (q *RealQRISService) extractTLVValue(data, tag string) string {
+	idx := strings.Index(data, tag)
+	if idx == -1 || idx+4 > len(data) {
+		return ""
+	}
+
+	// Get length (2 digits after tag)
+	lengthStr := data[idx+2 : idx+4]
+	length := 0
+	fmt.Sscanf(lengthStr, "%d", &length)
+
+	if length == 0 || idx+4+length > len(data) {
+		return ""
+	}
+
+	return data[idx+4 : idx+4+length]
+}
+
+// modifyQRISPayload modifies static QRIS to dynamic with amount and order info
+func (q *RealQRISService) modifyQRISPayload(staticPayload string, amount int, orderID string) string {
+	// Start with static payload
+	result := staticPayload
+
+	// Replace Point of Initiation Method to dynamic (tag 01)
+	result = q.replaceTLVValue(result, "01", "12")
+
+	// Add/replace transaction amount (tag 54)
+	amountStr := strconv.Itoa(amount)
+	result = q.replaceTLVValue(result, "54", amountStr)
+
+	// Build additional data field template (tag 62)
+	additionalData := ""
+	
+	// Bill number (tag 01 within 62)
+	billNumber := orderID[:min(len(orderID), 25)]
+	additionalData += q.formatTLV("01", billNumber)
+	
+	// Reference label (tag 05 within 62)
+	timestamp := time.Now().Format("060102150405")
+	refLabel := fmt.Sprintf("%s-%s", orderID[:min(len(orderID), 8)], timestamp)
+	additionalData += q.formatTLV("05", refLabel)
+	
+	// Replace additional data field
+	result = q.replaceTLVValue(result, "62", additionalData)
+
+	// Recalculate CRC (tag 63)
+	// Remove old CRC
+	if idx := strings.Index(result, "63"); idx != -1 {
+		result = result[:idx]
+	}
+	
+	// Add CRC placeholder and calculate
+	result += "6304"
+	crc := q.calculateCRC16(result)
+	result += crc
+
+	return result
+}
+
+// replaceTLVValue replaces or adds a TLV value
+func (q *RealQRISService) replaceTLVValue(data, tag, value string) string {
+	newTLV := q.formatTLV(tag, value)
+	
+	// Find and replace existing tag
+	idx := strings.Index(data, tag)
+	if idx != -1 && idx+2 < len(data) {
+		// Get length of existing value
+		lengthStr := data[idx+2 : idx+4]
+		oldLength := 0
+		fmt.Sscanf(lengthStr, "%d", &oldLength)
+		
+		if oldLength > 0 && idx+4+oldLength <= len(data) {
+			// Replace existing TLV
+			before := data[:idx]
+			after := data[idx+4+oldLength:]
+			return before + newTLV + after
+		}
+	}
+	
+	// Tag not found, append before CRC (tag 63)
+	if crcIdx := strings.Index(data, "63"); crcIdx != -1 {
+		return data[:crcIdx] + newTLV + data[crcIdx:]
+	}
+	
+	// No CRC found, just append
+	return data + newTLV
+}
+
+// formatTLV formats Tag-Length-Value according to EMV specification
+func (q *RealQRISService) formatTLV(tag, value string) string {
+	length := fmt.Sprintf("%02d", len(value))
+	return tag + length + value
+}
+
+// calculateCRC16 calculates CRC-16 checksum for QRIS
+func (q *RealQRISService) calculateCRC16(data string) string {
+	// CRC-16-CCITT polynomial
+	polynomial := uint16(0x1021)
+	crc := uint16(0xFFFF)
+
+	for i := 0; i < len(data); i++ {
+		crc ^= uint16(data[i]) << 8
+		for j := 0; j < 8; j++ {
+			if (crc & 0x8000) != 0 {
+				crc = (crc << 1) ^ polynomial
+			} else {
+				crc = crc << 1
+			}
+		}
+	}
+
+	return fmt.Sprintf("%04X", crc&0xFFFF)
 }
 
 // GenerateDynamicQRIS generates dynamic QRIS with specific amount
@@ -179,37 +313,8 @@ func (q *RealQRISService) GenerateDynamicQRIS(orderID string, amount int) (*mode
 
 	logrus.Infof("🔄 Generating dynamic QRIS for order %s with amount %d", orderID, amount)
 
-	// Parse the static QRIS
-	staticQRIS, err := qris.Decode(q.staticQRPayload)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decode static QRIS: %w", err)
-	}
-
-	// Create dynamic QRIS with new amount
-	dynamicQRIS := *staticQRIS
-
-	// Set dynamic values
-	dynamicQRIS.PointOfInitiationMethod = "12" // Dynamic QR
-	dynamicQRIS.TransactionAmount = strconv.Itoa(amount)
-
-	// Add additional data for order tracking
-	if dynamicQRIS.AdditionalDataFieldTemplate == nil {
-		dynamicQRIS.AdditionalDataFieldTemplate = &qris.AdditionalDataFieldTemplate{}
-	}
-
-	// Set bill number (order ID)
-	dynamicQRIS.AdditionalDataFieldTemplate.BillNumber = orderID[:min(len(orderID), 25)] // Max 25 chars
-
-	// Set reference label with timestamp
-	timestamp := time.Now().Format("060102150405")
-	refLabel := fmt.Sprintf("%s-%s", orderID[:min(len(orderID), 8)], timestamp)
-	dynamicQRIS.AdditionalDataFieldTemplate.ReferenceLabel = refLabel
-
-	// Generate new QRIS string
-	dynamicPayload, err := qris.Encode(&dynamicQRIS)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to encode dynamic QRIS: %w", err)
-	}
+	// Modify the static QRIS to make it dynamic
+	dynamicPayload := q.modifyQRISPayload(q.staticQRPayload, amount, orderID)
 
 	// Generate QR code image
 	qrImage, err := qrcodegen.Encode(dynamicPayload, qrcodegen.Medium, 256)
@@ -336,7 +441,7 @@ func (q *RealQRISService) loadStaticQRPayload() {
 
 	if payload != "" && merchantID != "" {
 		q.staticQRPayload = payload
-		q.merchantInfo = &qris.MerchantInfo{
+		q.merchantInfo = &MerchantInfo{
 			MerchantID:   merchantID,
 			MerchantName: merchantName,
 			MerchantCity: merchantCity,
