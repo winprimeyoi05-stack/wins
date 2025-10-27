@@ -1053,3 +1053,43 @@ func (db *DB) RestoreStockFromOrder(orderID string) error {
 
 	return tx.Commit()
 }
+
+// Payment Verification Methods
+
+// CreatePaymentVerification creates a payment verification record
+func (db *DB) CreatePaymentVerification(orderID string, expectedAmount int, qrisPayload, verificationHash string) error {
+	_, err := db.Exec(`
+		INSERT INTO payment_verifications (order_id, expected_amount, qris_payload, verification_hash)
+		VALUES (?, ?, ?, ?)
+	`, orderID, expectedAmount, qrisPayload, verificationHash)
+	return err
+}
+
+// GetPaymentVerification retrieves payment verification for an order
+func (db *DB) GetPaymentVerification(orderID string) (*models.PaymentVerification, error) {
+	verification := &models.PaymentVerification{}
+	err := db.QueryRow(`
+		SELECT id, order_id, expected_amount, qris_payload, verification_hash, created_at, verified_at
+		FROM payment_verifications 
+		WHERE order_id = ?
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, orderID).Scan(&verification.ID, &verification.OrderID, &verification.ExpectedAmount,
+		&verification.QRISPayload, &verification.VerificationHash, &verification.CreatedAt,
+		&verification.VerifiedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return verification, err
+}
+
+// MarkPaymentVerified marks payment verification as verified
+func (db *DB) MarkPaymentVerified(orderID string) error {
+	_, err := db.Exec(`
+		UPDATE payment_verifications 
+		SET verified_at = CURRENT_TIMESTAMP
+		WHERE order_id = ?
+	`, orderID)
+	return err
+}

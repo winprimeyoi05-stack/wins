@@ -16,13 +16,14 @@ import (
 	"telegram-premium-store/internal/config"
 	"telegram-premium-store/internal/models"
 
-	"github.com/fyvri/go-qris"
 	"github.com/google/uuid"
 	"github.com/makiuchi-d/gozxing"
 	"github.com/makiuchi-d/gozxing/qrcode"
 	"github.com/nfnt/resize"
 	"github.com/sirupsen/logrus"
 	qrcodegen "github.com/skip2/go-qrcode"
+	
+	qris "github.com/fyvri/go-qris/pkg/models"
 )
 
 // RealQRISService handles real QRIS implementation with static QR upload and dynamic generation
@@ -245,7 +246,16 @@ func (q *RealQRISService) GenerateDynamicQRIS(orderID string, amount int) (*mode
 }
 
 // GetMerchantInfo returns current merchant information
-func (q *RealQRISService) GetMerchantInfo() *qris.MerchantInfo {
+func (q *RealQRISService) GetMerchantInfo() *MerchantInfo {
+	if q.merchantInfo == nil {
+		return &MerchantInfo{
+			MerchantName: q.config.QRISMerchantName,
+			MerchantCity: q.config.QRISCity,
+			MerchantID:   q.config.QRISMerchantID,
+			CountryCode:  q.config.QRISCountryCode,
+			Currency:     q.config.QRISCurrencyCode,
+		}
+	}
 	return q.merchantInfo
 }
 
@@ -272,7 +282,7 @@ func (q *RealQRISService) GetStaticQRStatus() string {
 }
 
 // saveStaticQRConfig saves static QR configuration to file
-func (q *RealQRISService) saveStaticQRConfig(payload string, merchantInfo *qris.MerchantInfo) error {
+func (q *RealQRISService) saveStaticQRConfig(payload string, merchantInfo *MerchantInfo) error {
 	configPath := filepath.Join(q.qrisUploadDir, "qris_config.txt")
 	
 	config := fmt.Sprintf(`# QRIS Configuration

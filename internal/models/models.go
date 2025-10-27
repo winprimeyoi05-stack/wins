@@ -3,6 +3,7 @@ package models
 import (
 	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -173,8 +174,6 @@ type ProductStats struct {
 	OutOfStock      int `json:"out_of_stock"`
 	TopSelling      []Product `json:"top_selling,omitempty"`
 }
-
-import "fmt"
 
 // FormatPrice formats price with currency symbol
 func FormatPrice(price int, symbol string) string {
