@@ -579,7 +579,7 @@ func (b *Bot) handleCheckout(callback *tgbotapi.CallbackQuery) {
 	}
 
 	// Create payment verification record
-	verifier := payment.NewPaymentVerifier(b.config.BotToken) // Use bot token as secret key
+	verifier := payment.NewPaymentVerifier(b.config.PaymentSecretKey)
 	verificationHash := verifier.GenerateVerificationHash(orderID, totalAmount, qrisPayment.QRString)
 	
 	err = b.db.CreatePaymentVerification(orderID, totalAmount, qrisPayment.QRString, verificationHash)
