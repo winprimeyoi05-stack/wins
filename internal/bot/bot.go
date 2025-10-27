@@ -171,6 +171,9 @@ func (b *Bot) handleCommand(message *tgbotapi.Message) {
 		b.handleQRISSetup(message)
 	case "qristest":
 		b.handleQRISTestCommand(message)
+	case "addstock":
+		// Admin command to add product stock (supports all formats)
+		b.processAddStockCommand(message)
 	default:
 		b.sendMessage(message.Chat.ID, "❌ Perintah tidak dikenal. Ketik /help untuk bantuan.")
 	}

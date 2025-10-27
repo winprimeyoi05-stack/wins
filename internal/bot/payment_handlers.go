@@ -114,29 +114,32 @@ func (b *Bot) sendAccountsToBuyer(order *models.Order, accounts []models.SoldAcc
 		productAccounts[account.ProductName] = append(productAccounts[account.ProductName], account)
 	}
 
-	// Build message with accounts
+	// Build message with accounts (supports multiple formats)
 	accountIndex := 1
 	for productName, prodAccounts := range productAccounts {
 		message.WriteString(fmt.Sprintf("📦 *%s*\n", productName))
-		message.WriteString(fmt.Sprintf("   Jumlah: %d akun\n\n", len(prodAccounts)))
+		message.WriteString(fmt.Sprintf("   Jumlah: %d item\n\n", len(prodAccounts)))
 
 		for _, account := range prodAccounts {
-			accountCredentials := fmt.Sprintf("%s | %s", account.Email, account.Password)
-			message.WriteString(fmt.Sprintf("   🔑 Akun #%d:\n", accountIndex))
-			message.WriteString(fmt.Sprintf("   `%s`\n\n", accountCredentials))
+			contentLabel := account.GetContentLabel()
+			contentData := account.FormatContent()
+			
+			message.WriteString(fmt.Sprintf("   %s #%d:\n", contentLabel, accountIndex))
+			message.WriteString(fmt.Sprintf("   `%s`\n\n", contentData))
 			accountIndex++
 		}
 	}
 
 	message.WriteString("━━━━━━━━━━━━━━━━━━━━━\n\n")
 	message.WriteString("📋 *CARA MENGGUNAKAN:*\n")
-	message.WriteString("1. Tap/klik pada kredensial akun untuk menyalin\n")
-	message.WriteString("2. Paste pada aplikasi terkait\n")
-	message.WriteString("3. Pisahkan email dan password dengan '|'\n\n")
+	message.WriteString("1. Tap/klik pada data produk untuk menyalin\n")
+	message.WriteString("2. 🔐 Akun: Login dengan email | password\n")
+	message.WriteString("3. 🔗 Link: Klik atau salin link untuk redeem\n")
+	message.WriteString("4. 🎫 Kode: Gunakan kode untuk aktivasi\n\n")
 	message.WriteString("⚠️ *PENTING:*\n")
-	message.WriteString("• Simpan kredensial ini dengan aman\n")
+	message.WriteString("• Simpan data ini dengan aman\n")
 	message.WriteString("• Jangan share ke orang lain\n")
-	message.WriteString("• Segera ganti password setelah login\n\n")
+	message.WriteString("• Segera gunakan sesuai petunjuk produk\n\n")
 	message.WriteString("💬 Butuh bantuan? Hubungi /contact\n")
 	message.WriteString("⭐️ Terima kasih telah berbelanja!")
 
@@ -158,18 +161,20 @@ func (b *Bot) sendAccountsToBuyer(order *models.Order, accounts []models.SoldAcc
 
 		// Add copy button for each account
 		for _, account := range prodAccounts {
-			accountCredentials := fmt.Sprintf("%s | %s", account.Email, account.Password)
+			contentLabel := account.GetContentLabel()
+			contentData := account.FormatContent()
+			
 			keyboard = append(keyboard, tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData(
-					fmt.Sprintf("📋 Copy Akun #%d", accountButtonIndex),
-					fmt.Sprintf("copy_account:%d:%s", account.ID, order.ID),
+					fmt.Sprintf("📋 Copy %s #%d", contentLabel, accountButtonIndex),
+					fmt.Sprintf("copy_account:%d:%s", account.ID, orderID),
 				),
 			))
 			accountButtonIndex++
 
-			// Send individual copyable account message
-			accountMsg := fmt.Sprintf("🔑 *Akun #%d - %s*\n\n`%s`\n\n_Tap untuk menyalin_", 
-				accountButtonIndex-1, productName, accountCredentials)
+			// Send individual copyable content message
+			accountMsg := fmt.Sprintf("%s #%d - %s*\n\n`%s`\n\n_Tap untuk menyalin_", 
+				contentLabel, accountButtonIndex-1, productName, contentData)
 			copyMsg := tgbotapi.NewMessage(order.UserID, accountMsg)
 			copyMsg.ParseMode = tgbotapi.ModeMarkdown
 			b.api.Send(copyMsg)
@@ -258,13 +263,15 @@ func (b *Bot) sendAdminSaleNotification(order *models.Order, soldAccounts []mode
 
 	notification.WriteString("━━━━━━━━━━━━━━━━━━━━━\n\n")
 
-	// Sold accounts details
-	notification.WriteString("🔐 *AKUN YANG TERJUAL*\n\n")
+	// Sold accounts details (supports multiple formats)
+	notification.WriteString("📦 *PRODUK YANG TERJUAL*\n\n")
 	accountNo := 1
 	for productName, accounts := range productAccountsMap {
-		notification.WriteString(fmt.Sprintf("📦 *%s* (%d akun):\n", productName, len(accounts)))
+		notification.WriteString(fmt.Sprintf("📦 *%s* (%d item):\n", productName, len(accounts)))
 		for _, account := range accounts {
-			notification.WriteString(fmt.Sprintf("   %d. `%s | %s`\n", accountNo, account.Email, account.Password))
+			contentLabel := account.GetContentLabel()
+			contentData := account.FormatContent()
+			notification.WriteString(fmt.Sprintf("   %d. %s: `%s`\n", accountNo, contentLabel, contentData))
 			accountNo++
 		}
 		notification.WriteString("\n")

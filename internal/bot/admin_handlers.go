@@ -406,3 +406,156 @@ func (b *Bot) clearUserState(userID int64) {
 func (b *Bot) isUserInState(userID int64, state string) bool {
 	return userStates[userID] == state
 }
+
+// handleAddProductStock handles adding product stock (supports all formats)
+func (b *Bot) handleAddProductStock(callback *tgbotapi.CallbackQuery) {
+	if !b.config.IsAdmin(callback.From.ID) {
+		b.api.Request(tgbotapi.NewCallback(callback.ID, "❌ Akses ditolak"))
+		return
+	}
+
+	text := `📦 *TAMBAH STOK PRODUK*
+
+Pilih format produk yang ingin ditambahkan:
+
+🔐 *Account* - Format: email | password
+   Contoh: user@gmail.com | password123
+
+🔗 *Link* - URL redeem atau aktivasi
+   Contoh: https://netflix.com/redeem?code=ABC123
+
+🎫 *Code* - Kode voucher atau license
+   Contoh: SPOTIFY-PREMIUM-XYZ789
+
+📝 *Custom* - Format bebas
+   Contoh: UserID: 123 | Server: Asia
+
+Untuk menambahkan, gunakan format:
+/addstock [product_id] [type] [data]
+
+Contoh:
+/addstock 1 account user@gmail.com | pass123
+/addstock 2 link https://netflix.com/redeem?code=ABC
+/addstock 3 code SPOTIFY-CODE-XYZ789
+/addstock 4 custom UserID: 123 | Level: 100`
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📋 Lihat Produk", "admin:products"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Panel Admin", "admin:main"),
+		),
+	)
+
+	edit := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, text)
+	edit.ParseMode = tgbotapi.ModeMarkdown
+	edit.ReplyMarkup = &keyboard
+
+	b.api.Send(edit)
+}
+
+// processAddStockCommand processes /addstock command
+func (b *Bot) processAddStockCommand(message *tgbotapi.Message) {
+	if !b.config.IsAdmin(message.From.ID) {
+		b.sendMessage(message.Chat.ID, "❌ Akses ditolak. Command ini hanya untuk admin.")
+		return
+	}
+
+	// Parse command: /addstock [product_id] [type] [data]
+	parts := strings.SplitN(message.Text, " ", 4)
+	if len(parts) < 4 {
+		b.sendMessage(message.Chat.ID, `❌ Format salah!
+
+Gunakan: /addstock [product_id] [type] [data]
+
+Contoh:
+/addstock 1 account user@gmail.com | pass123
+/addstock 2 link https://netflix.com/redeem?code=ABC
+/addstock 3 code SPOTIFY-CODE-XYZ789
+/addstock 4 custom UserID: 123 | Level: 100
+
+Tipe yang tersedia: account, link, code, custom`)
+		return
+	}
+
+	productIDStr := parts[1]
+	contentType := strings.ToLower(parts[2])
+	contentData := parts[3]
+
+	// Validate product ID
+	productID, err := strconv.Atoi(productIDStr)
+	if err != nil {
+		b.sendMessage(message.Chat.ID, "❌ Product ID harus berupa angka!")
+		return
+	}
+
+	// Validate content type
+	validTypes := map[string]bool{
+		"account": true,
+		"link":    true,
+		"code":    true,
+		"custom":  true,
+	}
+
+	if !validTypes[contentType] {
+		b.sendMessage(message.Chat.ID, "❌ Tipe tidak valid! Gunakan: account, link, code, atau custom")
+		return
+	}
+
+	// Verify product exists
+	product, err := b.db.GetProduct(productID)
+	if err != nil || product == nil {
+		b.sendMessage(message.Chat.ID, fmt.Sprintf("❌ Produk dengan ID %d tidak ditemukan!", productID))
+		return
+	}
+
+	// Add product content to stock
+	err = b.db.AddProductContent(productID, contentType, contentData)
+	if err != nil {
+		logrus.Errorf("Failed to add product content: %v", err)
+		b.sendMessage(message.Chat.ID, "❌ Gagal menambahkan stok produk!")
+		return
+	}
+
+	// Get updated stock count
+	availableStock, _ := b.db.GetAvailableAccountCount(productID)
+
+	// Format icon based on type
+	typeIcon := "📦"
+	typeLabel := contentType
+	switch contentType {
+	case "account":
+		typeIcon = "🔐"
+		typeLabel = "Akun"
+	case "link":
+		typeIcon = "🔗"
+		typeLabel = "Link"
+	case "code":
+		typeIcon = "🎫"
+		typeLabel = "Kode"
+	case "custom":
+		typeIcon = "📝"
+		typeLabel = "Custom"
+	}
+
+	successMsg := fmt.Sprintf(`✅ *STOK BERHASIL DITAMBAHKAN!*
+
+📦 Produk: *%s*
+%s Tipe: %s
+📊 Stok tersedia: %d
+
+📝 Data yang ditambahkan:
+%s
+
+Stok produk berhasil diperbarui dan siap dijual!`,
+		product.Name,
+		typeIcon,
+		typeLabel,
+		availableStock,
+		contentData)
+
+	b.sendMessage(message.Chat.ID, successMsg)
+
+	logrus.Infof("Admin %d added %s stock for product %d: %s", message.From.ID, contentType, productID, contentData)
+}
