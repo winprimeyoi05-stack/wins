@@ -147,12 +147,14 @@ func (db *DB) migrate() error {
 			sent_at DATETIME
 		)`,
 
-		// Product accounts table (email|password stock)
+		// Product accounts table (supports multiple content formats: account/link/code/custom)
 		`CREATE TABLE IF NOT EXISTS product_accounts (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			product_id INTEGER NOT NULL,
-			email TEXT NOT NULL,
-			password TEXT NOT NULL,
+			content_type TEXT DEFAULT 'account',
+			content_data TEXT NOT NULL,
+			email TEXT,
+			password TEXT,
 			is_sold BOOLEAN DEFAULT FALSE,
 			sold_to_user_id INTEGER,
 			sold_order_id TEXT,
@@ -161,6 +163,13 @@ func (db *DB) migrate() error {
 			FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE,
 			FOREIGN KEY (sold_to_user_id) REFERENCES users (user_id) ON DELETE SET NULL
 		)`,
+
+		// Migration: Add content_type and content_data to existing product_accounts
+		`ALTER TABLE product_accounts ADD COLUMN content_type TEXT DEFAULT 'account'`,
+		`ALTER TABLE product_accounts ADD COLUMN content_data TEXT`,
+		
+		// Migrate existing data: combine email|password into content_data
+		`UPDATE product_accounts SET content_data = email || ' | ' || password WHERE content_data IS NULL AND email IS NOT NULL AND password IS NOT NULL`,
 
 		// Payment verifications table (anti-manipulation)
 		`CREATE TABLE IF NOT EXISTS payment_verifications (
@@ -174,15 +183,17 @@ func (db *DB) migrate() error {
 			FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE
 		)`,
 
-		// Sold accounts tracking
+		// Sold accounts tracking (supports multiple content formats)
 		`CREATE TABLE IF NOT EXISTS sold_accounts (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			order_id TEXT NOT NULL,
 			product_id INTEGER NOT NULL,
 			account_id INTEGER NOT NULL,
 			user_id INTEGER NOT NULL,
-			email TEXT NOT NULL,
-			password TEXT NOT NULL,
+			content_type TEXT DEFAULT 'account',
+			content_data TEXT NOT NULL,
+			email TEXT,
+			password TEXT,
 			sold_price INTEGER NOT NULL,
 			sold_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
@@ -190,6 +201,13 @@ func (db *DB) migrate() error {
 			FOREIGN KEY (account_id) REFERENCES product_accounts (id) ON DELETE CASCADE,
 			FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
 		)`,
+		
+		// Migration: Add content_type and content_data to existing sold_accounts
+		`ALTER TABLE sold_accounts ADD COLUMN content_type TEXT DEFAULT 'account'`,
+		`ALTER TABLE sold_accounts ADD COLUMN content_data TEXT`,
+		
+		// Migrate existing data: combine email|password into content_data
+		`UPDATE sold_accounts SET content_data = email || ' | ' || password WHERE content_data IS NULL AND email IS NOT NULL AND password IS NOT NULL`,
 
 		// Indexes for better performance
 		`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`,
@@ -328,7 +346,7 @@ func (db *DB) insertSampleData() error {
 	return nil
 }
 
-// insertSampleAccounts inserts sample email|password accounts for products
+// insertSampleAccounts inserts sample accounts with different content formats for products
 func (db *DB) insertSampleAccounts() error {
 	// Get all products to add accounts
 	products, err := db.GetProducts("", 100, 0)
@@ -336,44 +354,45 @@ func (db *DB) insertSampleAccounts() error {
 		return err
 	}
 
+	// Sample accounts with different formats (account/link/code)
 	sampleAccounts := map[string][]struct {
-		Email    string
-		Password string
+		ContentType string
+		ContentData string
 	}{
 		"Spotify Premium 1 Bulan": {
-			{"spotify.premium1@gmail.com", "SpotifyPass123!"},
-			{"premium.spotify2@gmail.com", "MusicLover456@"},
-			{"spotify.user3@gmail.com", "Premium789#"},
-			{"music.premium4@gmail.com", "SpotifyVIP999$"},
-			{"premium.music5@gmail.com", "Spotify2024!@"},
+			{"account", "spotify.premium1@gmail.com | SpotifyPass123!"},
+			{"account", "premium.spotify2@gmail.com | MusicLover456@"},
+			{"account", "spotify.user3@gmail.com | Premium789#"},
+			{"code", "SPOTIFY-PREMIUM-ABC123"},
+			{"code", "SPOTIFY-VIP-XYZ789"},
 		},
 		"Netflix Premium 1 Bulan": {
-			{"netflix.premium1@gmail.com", "NetflixHD123!"},
-			{"premium.netflix2@gmail.com", "StreamVIP456@"},
-			{"netflix.user3@gmail.com", "Premium789#"},
-			{"stream.premium4@gmail.com", "NetflixUHD999$"},
-			{"premium.stream5@gmail.com", "Netflix2024!@"},
+			{"account", "netflix.premium1@gmail.com | NetflixHD123!"},
+			{"account", "premium.netflix2@gmail.com | StreamVIP456@"},
+			{"account", "netflix.user3@gmail.com | Premium789#"},
+			{"link", "https://netflix.com/redeem?code=NFLX-ABCD-1234-EFGH"},
+			{"link", "https://netflix.com/redeem?code=NFLX-WXYZ-5678-IJKL"},
 		},
 		"YouTube Premium 1 Bulan": {
-			{"youtube.premium1@gmail.com", "YTPremium123!"},
-			{"premium.youtube2@gmail.com", "VideoVIP456@"},
-			{"youtube.user3@gmail.com", "Premium789#"},
-			{"video.premium4@gmail.com", "YouTubeVIP999$"},
-			{"premium.video5@gmail.com", "YouTube2024!@"},
+			{"account", "youtube.premium1@gmail.com | YTPremium123!"},
+			{"account", "premium.youtube2@gmail.com | VideoVIP456@"},
+			{"code", "YT-PREMIUM-CODE-001"},
+			{"code", "YT-PREMIUM-CODE-002"},
+			{"link", "https://youtube.com/premium/redeem/ABC123DEF456"},
 		},
 		"Canva Pro 1 Bulan": {
-			{"canva.pro1@gmail.com", "CanvaPro123!"},
-			{"pro.canva2@gmail.com", "DesignVIP456@"},
-			{"canva.user3@gmail.com", "Premium789#"},
-			{"design.pro4@gmail.com", "CanvaVIP999$"},
-			{"pro.design5@gmail.com", "Canva2024!@"},
+			{"account", "canva.pro1@gmail.com | CanvaPro123!"},
+			{"account", "pro.canva2@gmail.com | DesignVIP456@"},
+			{"link", "https://canva.com/redeem/CANVA-PRO-LINK-123"},
+			{"code", "CANVA-PRO-CODE-999"},
+			{"code", "CANVA-PRO-CODE-888"},
 		},
 		"Adobe Creative Cloud": {
-			{"adobe.cc1@gmail.com", "AdobeCC123!"},
-			{"creative.adobe2@gmail.com", "DesignSuite456@"},
-			{"adobe.user3@gmail.com", "Creative789#"},
-			{"cc.premium4@gmail.com", "AdobeVIP999$"},
-			{"premium.adobe5@gmail.com", "Adobe2024!@"},
+			{"account", "adobe.cc1@gmail.com | AdobeCC123!"},
+			{"account", "creative.adobe2@gmail.com | DesignSuite456@"},
+			{"code", "ADOBE-CC-LICENSE-12345"},
+			{"code", "ADOBE-CC-LICENSE-67890"},
+			{"link", "https://adobe.com/activate?code=ADOBE-CREATIVE-CLOUD-XYZ"},
 		},
 	}
 
@@ -381,9 +400,9 @@ func (db *DB) insertSampleAccounts() error {
 		if accounts, exists := sampleAccounts[product.Name]; exists {
 			for _, account := range accounts {
 				_, err := db.Exec(`
-					INSERT INTO product_accounts (product_id, email, password)
+					INSERT INTO product_accounts (product_id, content_type, content_data)
 					VALUES (?, ?, ?)
-				`, product.ID, account.Email, account.Password)
+				`, product.ID, account.ContentType, account.ContentData)
 				if err != nil {
 					return fmt.Errorf("failed to insert account for product %s: %w", product.Name, err)
 				}

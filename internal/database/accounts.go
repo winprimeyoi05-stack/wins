@@ -21,7 +21,7 @@ func (db *DB) GetAvailableAccountCount(productID int) (int, error) {
 // GetAvailableAccounts returns available accounts for a product
 func (db *DB) GetAvailableAccounts(productID int) ([]models.ProductAccount, error) {
 	rows, err := db.Query(`
-		SELECT id, product_id, email, password, created_at
+		SELECT id, product_id, content_type, content_data, email, password, created_at
 		FROM product_accounts 
 		WHERE product_id = ? AND is_sold = FALSE
 		ORDER BY created_at ASC
@@ -34,8 +34,8 @@ func (db *DB) GetAvailableAccounts(productID int) ([]models.ProductAccount, erro
 	var accounts []models.ProductAccount
 	for rows.Next() {
 		var account models.ProductAccount
-		err := rows.Scan(&account.ID, &account.ProductID, &account.Email, 
-			&account.Password, &account.CreatedAt)
+		err := rows.Scan(&account.ID, &account.ProductID, &account.ContentType,
+			&account.ContentData, &account.Email, &account.Password, &account.CreatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -95,7 +95,7 @@ func (db *DB) CreateOrderWithAccounts(order *models.Order) ([]models.ProductAcco
 
 		// Get and assign accounts
 		rows, err := tx.Query(`
-			SELECT id, email, password FROM product_accounts 
+			SELECT id, content_type, content_data, email, password FROM product_accounts 
 			WHERE product_id = ? AND is_sold = FALSE
 			ORDER BY created_at ASC
 			LIMIT ?
@@ -106,7 +106,8 @@ func (db *DB) CreateOrderWithAccounts(order *models.Order) ([]models.ProductAcco
 
 		for rows.Next() {
 			var account models.ProductAccount
-			err := rows.Scan(&account.ID, &account.Email, &account.Password)
+			err := rows.Scan(&account.ID, &account.ContentType, &account.ContentData,
+				&account.Email, &account.Password)
 			if err != nil {
 				rows.Close()
 				return nil, err
@@ -125,9 +126,9 @@ func (db *DB) CreateOrderWithAccounts(order *models.Order) ([]models.ProductAcco
 
 			// Add to sold accounts tracking
 			_, err = tx.Exec(`
-				INSERT INTO sold_accounts (order_id, product_id, account_id, user_id, email, password, sold_price)
-				VALUES (?, ?, ?, ?, ?, ?, ?)
-			`, order.ID, item.ProductID, account.ID, order.UserID, account.Email, account.Password, item.Price)
+				INSERT INTO sold_accounts (order_id, product_id, account_id, user_id, content_type, content_data, email, password, sold_price)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`, order.ID, item.ProductID, account.ID, order.UserID, account.ContentType, account.ContentData, account.Email, account.Password, item.Price)
 			if err != nil {
 				rows.Close()
 				return nil, err
@@ -145,7 +146,8 @@ func (db *DB) CreateOrderWithAccounts(order *models.Order) ([]models.ProductAcco
 // GetProductAccountsForOrder returns accounts assigned to an order
 func (db *DB) GetProductAccountsForOrder(orderID string) ([]models.SoldAccount, error) {
 	rows, err := db.Query(`
-		SELECT sa.id, sa.order_id, sa.product_id, sa.user_id, sa.email, sa.password, 
+		SELECT sa.id, sa.order_id, sa.product_id, sa.account_id, sa.user_id, 
+			   sa.content_type, sa.content_data, sa.email, sa.password, 
 			   sa.sold_price, sa.sold_at, p.name as product_name,
 			   u.first_name, u.last_name, u.username
 		FROM sold_accounts sa
@@ -162,9 +164,9 @@ func (db *DB) GetProductAccountsForOrder(orderID string) ([]models.SoldAccount, 
 	var accounts []models.SoldAccount
 	for rows.Next() {
 		var account models.SoldAccount
-		err := rows.Scan(&account.ID, &account.OrderID, &account.ProductID,
-			&account.UserID, &account.Email, &account.Password, &account.SoldPrice,
-			&account.SoldAt, &account.ProductName, &account.BuyerFirstName,
+		err := rows.Scan(&account.ID, &account.OrderID, &account.ProductID, &account.AccountID,
+			&account.UserID, &account.ContentType, &account.ContentData, &account.Email, &account.Password,
+			&account.SoldPrice, &account.SoldAt, &account.ProductName, &account.BuyerFirstName,
 			&account.BuyerLastName, &account.BuyerUsername)
 		if err != nil {
 			return nil, err
@@ -178,7 +180,8 @@ func (db *DB) GetProductAccountsForOrder(orderID string) ([]models.SoldAccount, 
 // GetSoldAccountsByProduct returns sold accounts for a specific product
 func (db *DB) GetSoldAccountsByProduct(productID int, limit, offset int) ([]models.SoldAccount, error) {
 	rows, err := db.Query(`
-		SELECT sa.id, sa.order_id, sa.product_id, sa.user_id, sa.email, sa.password,
+		SELECT sa.id, sa.order_id, sa.product_id, sa.account_id, sa.user_id,
+			   sa.content_type, sa.content_data, sa.email, sa.password,
 			   sa.sold_price, sa.sold_at, p.name as product_name,
 			   u.first_name, u.last_name, u.username
 		FROM sold_accounts sa
@@ -196,9 +199,9 @@ func (db *DB) GetSoldAccountsByProduct(productID int, limit, offset int) ([]mode
 	var accounts []models.SoldAccount
 	for rows.Next() {
 		var account models.SoldAccount
-		err := rows.Scan(&account.ID, &account.OrderID, &account.ProductID,
-			&account.UserID, &account.Email, &account.Password, &account.SoldPrice,
-			&account.SoldAt, &account.ProductName, &account.BuyerFirstName,
+		err := rows.Scan(&account.ID, &account.OrderID, &account.ProductID, &account.AccountID,
+			&account.UserID, &account.ContentType, &account.ContentData, &account.Email, &account.Password,
+			&account.SoldPrice, &account.SoldAt, &account.ProductName, &account.BuyerFirstName,
 			&account.BuyerLastName, &account.BuyerUsername)
 		if err != nil {
 			return nil, err
@@ -209,12 +212,18 @@ func (db *DB) GetSoldAccountsByProduct(productID int, limit, offset int) ([]mode
 	return accounts, rows.Err()
 }
 
-// AddProductAccount adds new account to product stock
+// AddProductAccount adds new account to product stock (legacy format - deprecated)
 func (db *DB) AddProductAccount(productID int, email, password string) error {
+	contentData := fmt.Sprintf("%s | %s", email, password)
+	return db.AddProductContent(productID, "account", contentData)
+}
+
+// AddProductContent adds new content to product stock (supports all formats)
+func (db *DB) AddProductContent(productID int, contentType, contentData string) error {
 	_, err := db.Exec(`
-		INSERT INTO product_accounts (product_id, email, password)
+		INSERT INTO product_accounts (product_id, content_type, content_data)
 		VALUES (?, ?, ?)
-	`, productID, email, password)
+	`, productID, contentType, contentData)
 	return err
 }
 
