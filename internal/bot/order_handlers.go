@@ -2,7 +2,6 @@ package bot
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"telegram-premium-store/internal/models"
@@ -199,7 +198,7 @@ func (b *Bot) handleExpiredOrder(orderID string) {
 
 Waktu pembayaran untuk pesanan #%s telah habis.
 
-💡 Silakan dapat melakukan pemesanan kembali jika masih membutuhkan produk tersebut.
+💡 Anda dapat melakukan pemesanan kembali jika masih membutuhkan produk tersebut.
 
 Terima kasih atas pengertiannya.`, orderID[:8])
 

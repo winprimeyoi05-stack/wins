@@ -26,7 +26,7 @@ func (b *Bot) handlePaymentSuccess(orderID string, paidAmount int) error {
 	}
 
 	// Verify payment amount against order amount
-	verifier := payment.NewPaymentVerifier(b.config.BotToken)
+	verifier := payment.NewPaymentVerifier(b.config.PaymentSecretKey)
 	verification, err := b.db.GetPaymentVerification(orderID)
 	if err != nil {
 		logrus.Errorf("Failed to get payment verification for order %s: %v", orderID, err)
