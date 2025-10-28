@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"telegram-premium-store/internal/models"
@@ -228,9 +229,21 @@ func (db *DB) migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_sold_accounts_product ON sold_accounts(product_id)`,
 	}
 
-	for _, migration := range migrations {
+	for i, migration := range migrations {
 		if _, err := db.Exec(migration); err != nil {
-			return fmt.Errorf("failed to execute migration: %w", err)
+			// Ignore "duplicate column name" errors for ALTER TABLE ADD COLUMN statements
+			// This allows migrations to be idempotent and safe to re-run
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "duplicate column name") {
+				logrus.Debugf("Skipping migration %d: column already exists (%s)", i, errMsg)
+				continue
+			}
+			// Ignore "duplicate index name" errors
+			if strings.Contains(errMsg, "index") && strings.Contains(errMsg, "already exists") {
+				logrus.Debugf("Skipping migration %d: index already exists", i)
+				continue
+			}
+			return fmt.Errorf("failed to execute migration %d: %w", i, err)
 		}
 	}
 
@@ -1036,13 +1049,25 @@ func (db *DB) CreateOrderWithStock(order *models.Order) error {
 	return tx.Commit()
 }
 
-// RestoreStockFromOrder restores stock when order is cancelled
+// RestoreStockFromOrder restores stock and accounts when order is cancelled or expired
 func (db *DB) RestoreStockFromOrder(orderID string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+
+	// First, restore accounts that were assigned to this order
+	// Mark them as not sold so they become available again
+	_, err = tx.Exec(`
+		UPDATE product_accounts 
+		SET is_sold = FALSE, sold_to_user_id = NULL, sold_order_id = NULL, sold_at = NULL
+		WHERE sold_order_id = ?
+	`, orderID)
+	if err != nil {
+		logrus.Errorf("Failed to restore accounts for order %s: %v", orderID, err)
+		return err
+	}
 
 	// Get order items
 	rows, err := tx.Query(`
@@ -1053,7 +1078,7 @@ func (db *DB) RestoreStockFromOrder(orderID string) error {
 	}
 	defer rows.Close()
 
-	// Restore stock for each item
+	// Restore stock count for each item (optional, as we're using account-based stock)
 	for rows.Next() {
 		var productID, quantity int
 		if err := rows.Scan(&productID, &quantity); err != nil {
@@ -1070,6 +1095,7 @@ func (db *DB) RestoreStockFromOrder(orderID string) error {
 		}
 	}
 
+	logrus.Infof("Restored accounts and stock for cancelled/expired order %s", orderID)
 	return tx.Commit()
 }
 
