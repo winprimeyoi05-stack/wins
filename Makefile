@@ -7,6 +7,19 @@ BINARY_NAME=telegram-store-bot
 DOCKER_IMAGE=telegram-store-bot
 DOCKER_TAG=latest
 
+# Detect OS and set binary extension
+ifeq ($(OS),Windows_NT)
+	BINARY_EXT=.exe
+	RM=del /Q
+	MKDIR=if not exist
+	PATH_SEP=\\
+else
+	BINARY_EXT=
+	RM=rm -f
+	MKDIR=mkdir -p
+	PATH_SEP=/
+endif
+
 # Default target
 help: ## Show this help message
 	@echo "Available commands:"
@@ -21,11 +34,11 @@ deps: ## Install Go dependencies
 build: deps ## Build the application
 	@echo "🔨 Building application..."
 	@mkdir -p bin
-	go build -o bin/$(BINARY_NAME) cmd/bot/main.go
+	go build -o bin/$(BINARY_NAME)$(BINARY_EXT) cmd/bot/main.go
 
 run: build ## Run the application
 	@echo "🚀 Starting bot..."
-	./bin/$(BINARY_NAME)
+	@bin/$(BINARY_NAME)$(BINARY_EXT)
 
 dev: ## Run in development mode with auto-reload (requires air)
 	@echo "🔄 Starting development mode..."
@@ -124,22 +137,22 @@ admin: build ## Run admin CLI tools
 qris-test: ## Build and run QRIS test tool
 	@echo "🔧 Building QRIS test tool..."
 	@mkdir -p bin
-	go build -o bin/qris-test cmd/qris-test/main.go
-	@echo "✅ QRIS test tool built: bin/qris-test"
-	@echo "Usage: ./bin/qris-test [upload|generate|status|test]"
+	go build -o bin/qris-test$(BINARY_EXT) cmd/qris-test/main.go
+	@echo "✅ QRIS test tool built: bin/qris-test$(BINARY_EXT)"
+	@echo "Usage: bin/qris-test$(BINARY_EXT) [upload|generate|status|test]"
 
 qris-upload: qris-test ## Upload QRIS static image (requires image path)
 	@if [ -z "$(IMAGE)" ]; then \
 		echo "❌ Usage: make qris-upload IMAGE=path/to/qr.png"; \
 	else \
-		./bin/qris-test upload $(IMAGE); \
+		bin/qris-test$(BINARY_EXT) upload $(IMAGE); \
 	fi
 
 qris-status: qris-test ## Show QRIS configuration status
-	@./bin/qris-test status
+	@bin/qris-test$(BINARY_EXT) status
 
 qris-generate: qris-test ## Generate test QRIS
-	@./bin/qris-test test
+	@bin/qris-test$(BINARY_EXT) test
 
 # Monitoring
 logs: ## Show application logs (if running with systemd)
@@ -177,7 +190,7 @@ quick-start: setup build ## Quick start for new users
 release: clean test build ## Prepare release build
 	@echo "📦 Preparing release..."
 	@mkdir -p release
-	@cp bin/$(BINARY_NAME) release/
+	@cp bin/$(BINARY_NAME)$(BINARY_EXT) release/
 	@cp .env.example release/
 	@cp README.md release/
 	@echo "✅ Release prepared in ./release/"
