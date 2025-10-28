@@ -20,6 +20,7 @@ deps: ## Install Go dependencies
 
 build: deps ## Build the application
 	@echo "🔨 Building application..."
+	@mkdir -p bin
 	go build -o bin/$(BINARY_NAME) cmd/bot/main.go
 
 run: build ## Run the application
@@ -79,6 +80,7 @@ docker-compose-logs: ## View docker-compose logs
 # Deployment
 deploy-build: ## Build for production deployment
 	@echo "🏭 Building for production..."
+	@mkdir -p bin
 	CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o bin/$(BINARY_NAME) cmd/bot/main.go
 
 # Utilities
@@ -121,6 +123,7 @@ admin: build ## Run admin CLI tools
 # QRIS tools
 qris-test: ## Build and run QRIS test tool
 	@echo "🔧 Building QRIS test tool..."
+	@mkdir -p bin
 	go build -o bin/qris-test cmd/qris-test/main.go
 	@echo "✅ QRIS test tool built: bin/qris-test"
 	@echo "Usage: ./bin/qris-test [upload|generate|status|test]"
